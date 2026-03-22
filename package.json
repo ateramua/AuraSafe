@@ -1,0 +1,64 @@
+{
+    "name": "spiritual-password-manager",
+    "version": "0.1.0",
+    "description": "A spiritual, mindful password manager desktop app with browser extensions",
+    "main": "electron/main/index.cjs",
+    "type": "commonjs",
+    "scripts": {
+        "dev": "next dev",
+        "build": "next build",
+        "start": "electron .",
+        "dist": "npm run clean && npm run build && electron-builder",
+        "clean": "rimraf .next out release dist",
+        "extension:chrome": "web-ext build -s extensions/chrome -a release/extensions",
+        "extension:firefox": "web-ext build -s extensions/firefox -a release/extensions"
+    },
+    "dependencies": {
+        "crypto-js": "^4.2.0",
+        "electron-context-menu": "^4.0.0",
+        "electron-store": "^9.0.0",
+        "electron-updater": "^6.3.9",
+        "next": "^14.2.3",
+        "react": "^18.3.1",
+        "react-dom": "^18.3.1",
+        "sqlite3": "^6.0.1",
+        "uuid": "^9.0.1"
+    },
+    "devDependencies": {
+        "electron": "^30.0.0",
+        "electron-builder": "^26.8.1",
+        "rimraf": "^6.0.1",
+        "web-ext": "^7.5.0"
+    },
+    "build": {
+        "appId": "com.spiritual.passwordmanager",
+        "productName": "Spiritual Password Manager",
+        "directories": {
+            "output": "release"
+        },
+        "files": [
+            "out/**/*",
+            "electron/**/*",
+            "src/db/data/**/*",
+            "node_modules/**/*"
+        ],
+        "extraResources": [
+            {
+                "from": "src/db/data/",
+                "to": "db/data/"
+            }
+        ],
+        "mac": {
+            "target": "dmg",
+            "icon": "electron/assets/icon.icns"
+        },
+        "win": {
+            "target": "nsis",
+            "icon": "electron/assets/icon.png"
+        },
+        "linux": {
+            "target": "AppImage",
+            "icon": "electron/assets/icon.png"
+        }
+    }
+}
