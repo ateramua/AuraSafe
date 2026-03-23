@@ -2,11 +2,11 @@
     "name": "spiritual-password-manager",
     "version": "0.1.0",
     "description": "A spiritual, mindful password manager desktop app with browser extensions",
-    "main": "electron/main/index.cjs",
-    "type": "commonjs",
+    "main": "electron/main/index.mjs",
     "scripts": {
-        "dev": "next dev",
+        "dev:electron": "concurrently \"next dev\" \"wait-on http://localhost:3000 && NODE_ENV=development electron .\"",
         "build": "next build",
+        "type": "module",
         "start": "electron .",
         "dist": "npm run clean && npm run build && electron-builder",
         "clean": "rimraf .next out release dist",
@@ -18,6 +18,9 @@
         "electron-context-menu": "^4.0.0",
         "electron-store": "^9.0.0",
         "electron-updater": "^6.3.9",
+        "idb": "^8.0.3",
+        "ipfs-http-client": "^60.0.1",
+        "keytar": "^7.9.0",
         "next": "^14.2.3",
         "react": "^18.3.1",
         "react-dom": "^18.3.1",
@@ -25,9 +28,13 @@
         "uuid": "^9.0.1"
     },
     "devDependencies": {
+        "concurrently": "^8.2.2",
+        "cross-env": "^10.1.0",
         "electron": "^30.0.0",
         "electron-builder": "^26.8.1",
+        "open-cli": "^7.2.0",
         "rimraf": "^6.0.1",
+        "wait-on": "^9.0.4",
         "web-ext": "^7.5.0"
     },
     "build": {
@@ -40,6 +47,7 @@
             "out/**/*",
             "electron/**/*",
             "src/db/data/**/*",
+            "src/preload/**/*",
             "node_modules/**/*"
         ],
         "extraResources": [

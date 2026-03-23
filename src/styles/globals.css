@@ -1,0 +1,329 @@
+/* src/styles/globals.css */
+
+/* Global reset */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: linear-gradient(135deg, #2f855a 0%, #14532d 100%);
+  font-family: 'Segoe UI', 'Roboto', system-ui, -apple-system, sans-serif;
+  color: #e2e8f0;
+  line-height: 1.5;
+}
+
+/* Auth screens */
+.auth-container {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 1rem;
+}
+
+.auth-card {
+  background: rgba(30, 58, 47, 0.95);
+  backdrop-filter: blur(10px);
+  border-radius: 2rem;
+  padding: 2rem;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(72, 187, 120, 0.4);
+  transition: transform 0.2s;
+}
+
+.auth-card:hover {
+  transform: translateY(-5px);
+}
+
+.auth-card h2 {
+  font-size: 1.8rem;
+  margin-bottom: 0.5rem;
+  color: #a7f3d0;
+  text-align: center;
+}
+
+.auth-card p {
+  text-align: center;
+  color: #c7f9e0;
+  margin-bottom: 1.5rem;
+}
+
+.auth-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.auth-card label {
+  color: #c7f9e0;
+}
+
+.auth-card input {
+  padding: 0.75rem 1rem;
+  border: 1px solid #2d6a4f;
+  border-radius: 1rem;
+  background: #f1faf5;
+  color: #1e3a2f;
+}
+
+.auth-card button {
+  background: #2f855a;
+  color: white;
+  border: none;
+  padding: 0.75rem;
+  border-radius: 2rem;
+  cursor: pointer;
+}
+
+.error {
+  color: #f8b4b4;
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+/* Vault */
+.vault-container {
+  max-width: 1200px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+.vault-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(30, 58, 47, 0.9);
+  padding: 1rem 1.5rem;
+  border-radius: 2rem;
+}
+
+.search-input {
+  padding: 0.75rem 1rem;
+  border-radius: 2rem;
+  background: #f1faf5;
+  color: #1e3a2f;
+}
+
+.add-button {
+  background: #0f5c3f;
+  color: white;
+  border-radius: 2rem;
+  padding: 0.5rem 1rem;
+}
+
+.lock-button {
+  background: #f0fdf4;
+  color: #0f5c3f;
+}
+
+/* Entries */
+.entries-grid {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.entry-card {
+  background: rgba(255,255,255,0.95);
+  border-radius: 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  padding: 1rem;
+}
+
+.entry-name {
+  color: #1e3a2f;
+}
+
+.entry-username {
+  color: #2d6a4f;
+}
+
+.delete-button:hover {
+  background: #fee2e2;
+}
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+}
+
+.modal {
+  background: #f1faf5;
+  border-radius: 1.5rem;
+  padding: 1.5rem;
+}
+
+/* Form */
+.entry-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.form-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+/* Settings page */
+.settings-container {
+  max-width: 800px;
+  margin: 2rem auto;
+}
+
+.settings-card {
+  background: rgba(255,255,255,0.95);
+  border-radius: 1.5rem;
+  padding: 2rem;
+}
+
+.setting-description {
+  color: #2d3748;
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.setting-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 1rem;
+  background: #f7fafc;
+  border-radius: 1rem;
+}
+
+.settings-nav {
+  text-align: center;
+  margin-top: 2rem;
+}
+
+/* Toggle */
+.toggle-switch {
+  width: 60px;
+  height: 34px;
+  position: relative;
+}
+
+.toggle-slider {
+  background: #ccc;
+  border-radius: 34px;
+}
+
+input:checked + .toggle-slider {
+  background: #2d6a4f;
+}
+
+/* Biometric button */
+.biometric-button {
+  background: #2d6a4f;
+  color: white;
+  border-radius: 2rem;
+  padding: 0.75rem;
+  width: 100%;
+}
+
+/* Security button */
+.security-button {
+  background: #2c7a4d;
+  color: white;
+  border-radius: 2rem;
+}
+
+/* Dashboard */
+.dashboard-container {
+  max-width: 1000px;
+  margin: 2rem auto;
+}
+
+.dashboard-card {
+  background: rgba(255,255,255,0.95);
+  border-radius: 1.5rem;
+  padding: 2rem;
+}
+
+.stat-value {
+  color: #2d6a4f;
+}
+
+/* Loading */
+.loading-spinner {
+  text-align: center;
+  padding: 3rem;
+}
+
+/* ===========================
+   Security page styles
+=========================== */
+.security-page {
+  max-width: 1200px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+.security-header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+}
+
+.security-header h1 {
+  margin: 0;
+  color: #1e3a2f;
+  font-size: 1.8rem;
+}
+
+.back-button {
+  background: #e2e8f0;
+  color: #1e3a2f;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 2rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.back-button:hover {
+  background: #cbd5e0;
+}
+
+/* Ensure dashboard text contrast */
+.dashboard-card {
+  background: rgba(255, 255, 255, 0.95);
+  color: #1a202c;
+}
+.dashboard-card h2,
+.dashboard-card h3 {
+  color: #1e3a2f;
+}
+.dashboard-card p,
+.dashboard-card li {
+  color: #2d3748;
+}
+.stat-value {
+  color: #2d6a4f;
+}
+.stat-label {
+  color: #4a5568;
+}
+.issue-section {
+  background: #fff5f0;
+  border-left-color: #ed8936;
+}
+.issue-section h3 {
+  color: #c05621;
+}
+.success-message {
+  background: #e6fffa;
+  color: #2c7a4d;
+}
