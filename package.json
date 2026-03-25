@@ -1,72 +1,80 @@
 {
-    "name": "spiritual-password-manager",
-    "version": "0.1.0",
-    "description": "A spiritual, mindful password manager desktop app with browser extensions",
-    "main": "electron/main/index.mjs",
-    "scripts": {
-        "dev:electron": "concurrently \"next dev\" \"wait-on http://localhost:3000 && NODE_ENV=development electron .\"",
-        "build": "next build",
-        "type": "module",
-        "start": "electron .",
-        "dist": "npm run clean && npm run build && electron-builder",
-        "clean": "rimraf .next out release dist",
-        "extension:chrome": "web-ext build -s extensions/chrome -a release/extensions",
-        "extension:firefox": "web-ext build -s extensions/firefox -a release/extensions"
+  "name": "aurasafe",
+  "version": "0.1.0",
+  "description": "A spiritual, mindful password manager desktop app with browser extensions",
+  "main": "electron/main/index.mjs",
+  "type": "module",
+  "scripts": {
+    "dev": "npm run dev:electron",
+    "dev:electron": "concurrently \"next dev\" \"wait-on http://localhost:3000 && NODE_ENV=development electron .\"",
+    "build": "next build && next export",
+    "start": "electron .",
+    "dist": "npm run clean && npm run build && electron-builder",
+    "clean": "rimraf .next out release dist",
+    "extension:chrome": "web-ext build -s extensions/chrome -a release/extensions",
+    "extension:firefox": "web-ext build -s extensions/firefox -a release/extensions"
+  },
+  "dependencies": {
+    "crypto-js": "^4.2.0",
+    "electron-context-menu": "^4.0.0",
+    "electron-store": "^9.0.0",
+    "electron-updater": "^6.3.9",
+    "express": "^4.18.3",
+    "idb": "^8.0.3",
+    "ipfs-http-client": "^60.0.1",
+    "keytar": "^7.9.0",
+    "next": "^14.2.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^6.0.1",
+    "uuid": "^9.0.1",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "cross-env": "^10.1.0",
+    "electron": "^30.0.0",
+    "electron-builder": "^26.8.1",
+    "open-cli": "^7.2.0",
+    "rimraf": "^6.0.1",
+    "wait-on": "^9.0.4",
+    "web-ext": "^7.5.0"
+  },
+  "build": {
+    "appId": "com.spiritual.passwordmanager",
+    "productName": "Spiritual Password Manager",
+    "directories": {
+      "output": "release"
     },
-    "dependencies": {
-        "crypto-js": "^4.2.0",
-        "electron-context-menu": "^4.0.0",
-        "electron-store": "^9.0.0",
-        "electron-updater": "^6.3.9",
-        "idb": "^8.0.3",
-        "ipfs-http-client": "^60.0.1",
-        "keytar": "^7.9.0",
-        "next": "^14.2.3",
-        "react": "^18.3.1",
-        "react-dom": "^18.3.1",
-        "sqlite3": "^6.0.1",
-        "uuid": "^9.0.1"
+    "asarUnpack": [
+      "node_modules/sqlite3",
+      "node_modules/keytar"
+    ],
+    "files": [
+      "out/**/*",
+      "electron/**/*",
+      "src/db/data/**/*",
+      "src/preload/**/*",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "src/db/data/",
+        "to": "db/data/"
+      }
+    ],
+    "mac": {
+      "target": "dmg",
+      "icon": "electron/assets/icon.icns"
     },
-    "devDependencies": {
-        "concurrently": "^8.2.2",
-        "cross-env": "^10.1.0",
-        "electron": "^30.0.0",
-        "electron-builder": "^26.8.1",
-        "open-cli": "^7.2.0",
-        "rimraf": "^6.0.1",
-        "wait-on": "^9.0.4",
-        "web-ext": "^7.5.0"
+    "win": {
+      "target": "nsis",
+      "icon": "electron/assets/icon.png"
     },
-    "build": {
-        "appId": "com.spiritual.passwordmanager",
-        "productName": "Spiritual Password Manager",
-        "directories": {
-            "output": "release"
-        },
-        "files": [
-            "out/**/*",
-            "electron/**/*",
-            "src/db/data/**/*",
-            "src/preload/**/*",
-            "node_modules/**/*"
-        ],
-        "extraResources": [
-            {
-                "from": "src/db/data/",
-                "to": "db/data/"
-            }
-        ],
-        "mac": {
-            "target": "dmg",
-            "icon": "electron/assets/icon.icns"
-        },
-        "win": {
-            "target": "nsis",
-            "icon": "electron/assets/icon.png"
-        },
-        "linux": {
-            "target": "AppImage",
-            "icon": "electron/assets/icon.png"
-        }
+    "linux": {
+      "target": "AppImage",
+      "icon": "electron/assets/icon.png"
     }
+  }
 }

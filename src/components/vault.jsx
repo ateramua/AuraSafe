@@ -1,6 +1,5 @@
 // src/views/Vault.jsx
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 import EntryModal from './EntryModal';
 
 export default function Vault() {
@@ -262,9 +261,12 @@ export default function Vault() {
       <div style={styles.header}>
         <h2>Vault</h2>
         <div>
-          <Link href="./settings/">
-            <button style={styles.settingsButton}>⚙️</button>
-          </Link>
+          <button
+            style={styles.settingsButton}
+            onClick={() => api.navigate('/settings')}
+          >
+            ⚙️
+          </button>
           <button onClick={handleLock} style={styles.lockButton}>
             Lock
           </button>
@@ -316,6 +318,37 @@ export default function Vault() {
               <button onClick={() => handleSync('pull')} style={styles.syncButton}>
                 📥 Pull
               </button>
+              {/* Sync section */}
+              <div style={{ marginTop: '2rem', borderTop: '1px solid #ccc', paddingTop: '1rem' }}>
+                <h3>Sync</h3>
+                <button onClick={async () => {
+                  try {
+                    const result = await window.api.sync.push();
+                    if (result.success) {
+                      alert(`✅ Pushed to IPFS. CID: ${result.cid}`);
+                    } else {
+                      alert(`❌ Push failed: ${result.error}`);
+                    }
+                  } catch (err) {
+                    alert(`Push error: ${err.message}`);
+                  }
+                }}>Push to IPFS</button>
+                <Link href="/settings">
+  <button>⚙️ Settings</button>
+</Link>
+                <button onClick={async () => {
+                  try {
+                    const result = await window.api.sync.pull();
+                    if (result.success) {
+                      alert('✅ Pulled from IPFS');
+                    } else {
+                      alert(`❌ Pull failed: ${result.error}`);
+                    }
+                  } catch (err) {
+                    alert(`Pull error: ${err.message}`);
+                  }
+                }}>Pull from IPFS</button>
+              </div>
             </div>
             {syncMessage && <div style={styles.syncMessage}>{syncMessage}</div>}
           </div>
@@ -365,7 +398,5 @@ const styles = {
     gap: '8px',
     fontSize: '0.9rem',
   },
-  errorIcon: {
-    fontSize: '1.2rem',
-  },
+  errorIcon: { fontSize: '1.2rem' },
 };

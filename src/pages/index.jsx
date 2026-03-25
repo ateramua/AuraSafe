@@ -1,10 +1,15 @@
+// src/pages/index.jsx
 import { useState } from 'react';
 
 export default function Home() {
   const [message, setMessage] = useState('');
 
+  const navigate = (path) => {
+    window.location.href = path;
+  };
+
   const testElectron = async () => {
-    if (window.api?.ping) {
+    if (window.api && window.api.ping) {
       const response = await window.api.ping();
       setMessage(`Electron replied: ${response}`);
     } else {
@@ -15,29 +20,11 @@ export default function Home() {
   return (
     <div style={{ padding: '2rem' }}>
       <h1>Password Manager</h1>
-
-      <a href="./vault/">
-        <button style={{ marginRight: '1rem' }}>Go to Vault</button>
-      </a>
-
-      <a href="./settings/">
-        <button style={{
-          margin: '1rem',
-          padding: '0.5rem 1rem',
-          background: '#0070f3',
-          color: 'white',
-          border: 'none',
-          borderRadius: '4px'
-        }}>
-          ⚙️ Settings
-        </button>
-      </a>
-
-      <button onClick={testElectron}>
-        Test Electron Connection
-      </button>
-
-      <p>{message}</p>
+      <button onClick={() => navigate('/vault')}>Go to Vault</button>
+      <button onClick={() => navigate('/security')}>Go to Security</button>
+      <button onClick={() => navigate('/settings')}>Go to Settings</button>
+      <button onClick={testElectron}>Test Electron Connection</button>
+      {message && <p>{message}</p>}
     </div>
   );
 }

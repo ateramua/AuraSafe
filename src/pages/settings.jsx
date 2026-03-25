@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import SecurityDashboard from '../components/SecurityDashboard';
+// import SecurityDashboard from '../components/SecurityDashboard'; // COMMENTED OUT – was causing 404
 import {
   isUnlocked,
   getSyncCID,
@@ -75,7 +75,7 @@ export default function SettingsPage() {
         <div className="auth-card">
           <h2>Vault Locked</h2>
           <p>Please unlock your vault to view security settings and insights.</p>
-          <Link href="./vault/">
+          <Link href="/vault">
             <button className="back-button">← Go to Vault</button>
           </Link>
         </div>
@@ -153,14 +153,15 @@ export default function SettingsPage() {
     <div className="settings-container">
       <div className="settings-card">
         <div className="security-header">
-          <Link href="./vault/">
+          <Link href="/vault">
             <button className="back-button">← Back to Vault</button>
           </Link>
           <h1>Security Dashboard & Settings</h1>
         </div>
 
-        {/* Security Dashboard – shows vault entries in a modern layout */}
-        <SecurityDashboard entries={entries} />
+        {/* Security Dashboard temporarily removed – was causing 404
+            Please check SecurityDashboard component for missing assets (CSS, images, etc.) */}
+        {/* <SecurityDashboard entries={entries} /> */}
 
         <hr className="settings-divider" />
 
