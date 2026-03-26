@@ -1,6 +1,7 @@
 const SECRET = 'your-random-secret-here'; // Must match Electron's secret
 let ws = null;
 let reconnectInterval = null;
+const TOKEN = 'c298a455aff1df8c171ea210f088256256140397b6b3eca8b70b87855e7dbfb7';
 
 function connect() {
   ws = new WebSocket(`ws://localhost:8765?token=${SECRET}`);

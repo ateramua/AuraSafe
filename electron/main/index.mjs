@@ -8,6 +8,7 @@ import sqlite3 from 'sqlite3';
 import Store from 'electron-store';
 import { v4 as uuidv4 } from 'uuid';
 import { WebSocketServer } from 'ws';
+import { randomBytes } from 'crypto';
 
 // Import your custom modules
 import {
@@ -29,12 +30,12 @@ import { pushToIPFS, pullFromIPFS, getCurrentCID } from '../sync/sync-engine.mjs
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const preloadPath = path.join(__dirname, '../preload/preload.cjs');
 const isDev = process.env.NODE_ENV === 'development';
-const EXTENSION_SECRET = 'your-random-secret-here';
 
 let mainWindow;
 let server;
 let db;
 let wsServer;
+let EXTENSION_SECRET; // Will be loaded/generated below
 
 // ========== Database helpers ==========
 function getDatabasePath() {
@@ -216,6 +217,17 @@ async function initDatabase() {
     console.log('✅ Database already exists');
   }
   return db;
+}
+
+// ========== Extension token management ==========
+const tokenStore = new Store({ name: 'extension' });
+EXTENSION_SECRET = tokenStore.get('token');
+if (!EXTENSION_SECRET) {
+  EXTENSION_SECRET = randomBytes(32).toString('hex');
+  tokenStore.set('token', EXTENSION_SECRET);
+  console.log('🔑 Generated extension token:', EXTENSION_SECRET);
+} else {
+  console.log('🔑 Using existing extension token:', EXTENSION_SECRET);
 }
 
 // ========== User service (simplified) ==========

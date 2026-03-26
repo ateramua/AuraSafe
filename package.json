@@ -5,9 +5,9 @@
   "main": "electron/main/index.mjs",
   "type": "module",
   "scripts": {
-    "dev": "npm run dev:electron",
-    "dev:electron": "concurrently \"next dev\" \"wait-on http://localhost:3000 && NODE_ENV=development electron .\"",
-    "build": "next build && next export",
+    "build": "next build",
+    "dev": "concurrently \"next dev\" \"wait-on http://localhost:3000 && NODE_ENV=development electron .\"",
+    "electron:prod": "npm run build && concurrently \"serve -s out -l 3000\" \"wait-on http://localhost:3000 && electron .\"",
     "start": "electron .",
     "dist": "npm run clean && npm run build && electron-builder",
     "clean": "rimraf .next out release dist",
@@ -29,7 +29,8 @@
     "sqlite": "^5.1.1",
     "sqlite3": "^6.0.1",
     "uuid": "^9.0.1",
-    "ws": "^8.20.0"
+    "ws": "^8.20.0",
+    "zxcvbn": "^4.4.2"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
@@ -38,6 +39,7 @@
     "electron-builder": "^26.8.1",
     "open-cli": "^7.2.0",
     "rimraf": "^6.0.1",
+    "serve": "^14.2.6",
     "wait-on": "^9.0.4",
     "web-ext": "^7.5.0"
   },

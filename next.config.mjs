@@ -1,9 +1,9 @@
 // next.config.mjs
 const nextConfig = {
-  output: 'export',           // static export
-  trailingSlash: true,        // /vault → /vault/index.html
-  assetPrefix: './',          // ensures JS/CSS/images load relative to app://
-  basePath: '',               // no subpath
+  output: 'export',          // static export
+  trailingSlash: true,       // ensures /vault -> /vault/index.html
+  assetPrefix: '',           // use absolute paths (since we'll serve via HTTP)
+  basePath: '',
   images: { unoptimized: true },
 
   reactStrictMode: false,

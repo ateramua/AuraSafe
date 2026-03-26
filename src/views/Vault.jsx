@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Sidebar from '../components/Sidebar';
 import CategoryModal from '../components/CategoryModal';
-import EntryModal from '../components/EntryModal'; // still used by CategoryModal, but not directly here
 
 export default function Vault() {
   const router = useRouter();
@@ -18,7 +17,7 @@ export default function Vault() {
   const [syncLoading, setSyncLoading] = useState(false);
   const [unlockError, setUnlockError] = useState(null);
 
-  // State for the category modal
+  // Modal state
   const [modalCategory, setModalCategory] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -236,34 +235,32 @@ export default function Vault() {
     );
   }
 
-  // Unlocked view: sidebar + main area (welcome & sync)
+  // Unlocked view
   return (
     <div style={styles.mainContainer}>
-      <Sidebar selectedCategory={null} onOpenCategory={openCategoryModal} />
+      <Sidebar onOpenCategory={openCategoryModal} />
       <div style={styles.content}>
         <div style={styles.header}>
           <h2>AuraSafe Vault</h2>
-          <div style={styles.headerActions}>
+          <div>
+            <button style={styles.settingsButton} onClick={() => router.push('/settings')}>
+              ⚙️
+            </button>
             <button onClick={handleLock} style={styles.lockButton}>
               Lock
+            </button>
+            <button onClick={handleLock} style={styles.logoutButton}>
+              🚪 Logout
             </button>
           </div>
         </div>
 
         {/* Sync Toolbar */}
         <div style={styles.syncToolbar}>
-          <button
-            onClick={() => handleSync('push')}
-            disabled={syncLoading}
-            style={styles.syncButton}
-          >
+          <button onClick={() => handleSync('push')} disabled={syncLoading} style={styles.syncButton}>
             {syncLoading ? 'Pushing...' : '📤 Push to IPFS'}
           </button>
-          <button
-            onClick={() => handleSync('pull')}
-            disabled={syncLoading}
-            style={styles.syncButton}
-          >
+          <button onClick={() => handleSync('pull')} disabled={syncLoading} style={styles.syncButton}>
             {syncLoading ? 'Pulling...' : '📥 Pull from IPFS'}
           </button>
           {syncMessage && <div style={styles.syncMessage}>{syncMessage}</div>}
@@ -286,7 +283,6 @@ export default function Vault() {
   );
 }
 
-// Updated styles (includes new ones, keeps all necessary ones)
 const styles = {
   mainContainer: {
     display: 'flex',
@@ -297,20 +293,33 @@ const styles = {
     flex: 1,
     padding: '2rem',
     overflowY: 'auto',
-    marginLeft: '280px', // matches sidebar width
   },
   header: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '1.5rem',
+    marginBottom: '1rem',
   },
-  headerActions: {
-    display: 'flex',
-    gap: '1rem',
+  settingsButton: {
+    marginRight: 10,
+    background: '#6c757d',
+    color: '#fff',
+    border: 'none',
+    padding: '0.5rem 1rem',
+    cursor: 'pointer',
+    borderRadius: '0.5rem',
   },
   lockButton: {
+    marginLeft: 10,
     background: '#dc3545',
+    color: '#fff',
+    border: 'none',
+    padding: '0.5rem 1rem',
+    cursor: 'pointer',
+  },
+  logoutButton: {
+    marginLeft: 10,
+    background: '#f97316',
     color: '#fff',
     border: 'none',
     padding: '0.5rem 1rem',
@@ -319,28 +328,21 @@ const styles = {
   },
   syncToolbar: {
     display: 'flex',
-    gap: '1rem',
+    gap: 10,
+    margin: '1rem 0',
     alignItems: 'center',
-    marginBottom: '2rem',
   },
   syncButton: {
     background: '#3B82F6',
     color: '#fff',
     border: 'none',
     padding: '0.5rem 1rem',
-    borderRadius: '0.5rem',
     cursor: 'pointer',
-    transition: 'background 0.2s',
-    ':hover': {
-      background: '#2563EB',
-    },
-    ':disabled': {
-      opacity: 0.5,
-      cursor: 'not-allowed',
-    },
+    borderRadius: '0.5rem',
   },
   syncMessage: {
-    fontSize: '0.875rem',
+    marginLeft: '1rem',
+    fontSize: '0.9rem',
     color: '#9CA3AF',
   },
   welcome: {
@@ -353,7 +355,6 @@ const styles = {
     backdropFilter: 'blur(4px)',
     marginTop: '2rem',
   },
-  // Styles for initialization/unlock screens (unchanged)
   container: {
     padding: '2rem',
     maxWidth: 800,
