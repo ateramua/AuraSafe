@@ -488,6 +488,42 @@ ipcMain.handle('biometric:isAvailable', async () => {
   }
 });
 
+// ===================== CHANGE PASSWORD HANDLER =====================
+ipcMain.handle('vault:changePassword', async (event, currentPassword, newPassword) => {
+  try {
+    console.log('[vault:changePassword] Starting password change...');
+    
+    // 1. First verify current password by unlocking
+    const unlockResult = await unlockVault(currentPassword);
+    if (!unlockResult.success) {
+      console.error('[vault:changePassword] Current password incorrect');
+      return { success: false, error: 'Current password is incorrect' };
+    }
+    
+    // 2. Get all current entries while vault is unlocked
+    const entries = await loadVaultEntries();
+    console.log(`[vault:changePassword] Found ${entries.length} entries to re-encrypt`);
+    
+    // 3. Initialize new vault with new password (this creates new encryption)
+    const initResult = await initVault(newPassword);
+    if (!initResult.success) {
+      return { success: false, error: 'Failed to initialize new vault encryption' };
+    }
+    
+    // 4. Re-save all entries with new encryption
+    for (const entry of entries) {
+      await saveVaultEntries([entry]);
+    }
+    
+    console.log('[vault:changePassword] Password changed successfully');
+    return { success: true };
+    
+  } catch (error) {
+    console.error('[vault:changePassword] Error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // ===================== LIFECYCLE =====================
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {

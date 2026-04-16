@@ -81,6 +81,18 @@ const api = {
     }
   },
   
+  // CHANGE PASSWORD - ADD THIS METHOD
+  changePassword: async (currentPassword, newPassword) => {
+    try {
+      console.log('[API] changePassword called');
+      const result = await ipcRenderer.invoke('vault:changePassword', currentPassword, newPassword);
+      return result;
+    } catch (error) {
+      console.error('[API] changePassword error:', error);
+      return { success: false, error: error.message };
+    }
+  },
+  
   // Biometric
   biometric: {
     isAvailable: async () => {

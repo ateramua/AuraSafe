@@ -1,3 +1,4 @@
+// src/pages/settings.jsx
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
@@ -35,10 +36,246 @@ function SafeLink({ href, children, className }) {
   );
 }
 
+// Enhanced Change Password Component with strength meter
+function ChangePassword({ api, onSuccess, onError }) {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [passwordStrength, setPasswordStrength] = useState({ score: 0, label: '' });
+
+  // Password strength checker
+  const checkStrength = (password) => {
+    let score = 0;
+    let label = '';
+    
+    if (password.length >= 8) score++;
+    if (password.length >= 12) score++;
+    if (/[A-Z]/.test(password)) score++;
+    if (/[0-9]/.test(password)) score++;
+    if (/[^A-Za-z0-9]/.test(password)) score++;
+    
+    if (score <= 2) label = 'Weak';
+    else if (score <= 4) label = 'Moderate';
+    else label = 'Strong';
+    
+    setPasswordStrength({ score: Math.min(score * 20, 100), label });
+  };
+
+  const handleNewPasswordChange = (e) => {
+    const password = e.target.value;
+    setNewPassword(password);
+    if (password) {
+      checkStrength(password);
+    } else {
+      setPasswordStrength({ score: 0, label: '' });
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (newPassword !== confirmPassword) {
+      onError('New passwords do not match');
+      return;
+    }
+    
+    if (newPassword.length < 8) {
+      onError('New password must be at least 8 characters long');
+      return;
+    }
+    
+    setLoading(true);
+    
+    try {
+      // Call the dedicated changePassword API
+      const result = await api.changePassword(currentPassword, newPassword);
+      
+      if (result.success) {
+        onSuccess('Master password changed successfully! Please remember your new password. You will need to unlock again.');
+        
+        // Clear form
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        setPasswordStrength({ score: 0, label: '' });
+        
+        // Lock the vault to force re-authentication with new password
+        setTimeout(async () => {
+          await api.lockVault();
+          window.location.href = '/vault';
+        }, 2000);
+        
+      } else {
+        onError(result.error || 'Failed to change password');
+      }
+      
+    } catch (err) {
+      onError('Failed to change password: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getStrengthColor = () => {
+    if (passwordStrength.score <= 33) return '#ef4444';
+    if (passwordStrength.score <= 66) return '#eab308';
+    return '#22c55e';
+  };
+
+  return (
+    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#C8E6C9' }}>
+          Current Master Password
+        </label>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <input
+            type={showPassword ? 'text' : 'password'}
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            required
+            style={{ 
+              width: '100%', 
+              padding: '0.75rem', 
+              borderRadius: '0.5rem', 
+              border: '1px solid #4caf50', 
+              background: '#111827', 
+              color: '#F3F4F6' 
+            }}
+            autoComplete="current-password"
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            style={{ 
+              position: 'absolute', 
+              right: '0.75rem', 
+              background: 'transparent', 
+              border: 'none', 
+              cursor: 'pointer', 
+              fontSize: '1.1rem' 
+            }}
+          >
+            {showPassword ? '👁️' : '👁️‍🗨️'}
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#C8E6C9' }}>
+          New Master Password
+        </label>
+        <input
+          type="password"
+          value={newPassword}
+          onChange={handleNewPasswordChange}
+          required
+          style={{ 
+            width: '100%', 
+            padding: '0.75rem', 
+            borderRadius: '0.5rem', 
+            border: '1px solid #4caf50', 
+            background: '#111827', 
+            color: '#F3F4F6' 
+          }}
+          autoComplete="new-password"
+        />
+        {newPassword && (
+          <div style={{ marginTop: '0.5rem' }}>
+            <div style={{ 
+              height: '4px', 
+              background: '#2d3748', 
+              borderRadius: '2px', 
+              overflow: 'hidden' 
+            }}>
+              <div style={{ 
+                width: `${passwordStrength.score}%`, 
+                height: '100%', 
+                background: getStrengthColor(),
+                transition: 'width 0.3s ease'
+              }} />
+            </div>
+            <div style={{ 
+              fontSize: '0.7rem', 
+              color: getStrengthColor(), 
+              marginTop: '0.25rem' 
+            }}>
+              Password strength: {passwordStrength.label}
+            </div>
+          </div>
+        )}
+        <div style={{ fontSize: '0.7rem', color: '#9CA3AF', marginTop: '0.5rem' }}>
+          Minimum 8 characters. Use uppercase, numbers, and symbols for a stronger password.
+        </div>
+      </div>
+
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#C8E6C9' }}>
+          Confirm New Password
+        </label>
+        <input
+          type="password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          required
+          style={{ 
+            width: '100%', 
+            padding: '0.75rem', 
+            borderRadius: '0.5rem', 
+            border: newPassword && confirmPassword && newPassword !== confirmPassword 
+              ? '1px solid #ef4444' 
+              : '1px solid #4caf50',
+            background: '#111827', 
+            color: '#F3F4F6' 
+          }}
+          autoComplete="new-password"
+        />
+        {newPassword && confirmPassword && newPassword !== confirmPassword && (
+          <div style={{ fontSize: '0.7rem', color: '#ef4444', marginTop: '0.25rem' }}>
+            Passwords do not match
+          </div>
+        )}
+      </div>
+
+      <button 
+        type="submit" 
+        disabled={loading || (newPassword !== confirmPassword)}
+        style={{ 
+          padding: '0.75rem', 
+          background: '#2E7D32', 
+          color: 'white', 
+          border: 'none', 
+          borderRadius: '0.5rem', 
+          cursor: 'pointer', 
+          fontSize: '1rem', 
+          fontWeight: '500',
+          opacity: loading || (newPassword !== confirmPassword) ? 0.6 : 1,
+          transition: 'all 0.2s ease'
+        }}
+      >
+        {loading ? 'Changing Password...' : 'Change Master Password'}
+      </button>
+      
+      <div style={{ 
+        fontSize: '0.75rem', 
+        color: '#9CA3AF', 
+        textAlign: 'center', 
+        marginTop: '0.5rem' 
+      }}>
+        This will re-encrypt all your vault entries with the new password.
+      </div>
+    </form>
+  );
+}
+
 export default function SettingsPage() {
+  const router = useRouter();
   const [entries, setEntries] = useState([]);
   const [unlocked, setUnlocked] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [api, setApi] = useState(null);
 
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
@@ -46,13 +283,24 @@ export default function SettingsPage() {
   const [syncCID, setSyncCID] = useState('');
   const [syncMessage, setSyncMessage] = useState('');
   const [syncLoading, setSyncLoading] = useState(false);
+  
+  // Password change message
+  const [passwordMessage, setPasswordMessage] = useState({ type: '', text: '' });
 
   // Derived metrics for the dashboard
   const [securityScore, setSecurityScore] = useState(0);
   const [strongPasswords, setStrongPasswords] = useState(0);
 
   useEffect(() => {
+    if (typeof window !== 'undefined' && window.api) {
+      setApi(window.api);
+    }
+  }, []);
+
+  useEffect(() => {
     const init = async () => {
+      if (!api) return;
+      
       const unlockedStatus = await isUnlocked();
       setUnlocked(unlockedStatus);
 
@@ -87,7 +335,7 @@ export default function SettingsPage() {
       }
     };
     init();
-  }, []);
+  }, [api]);
 
   // Compute security metrics when entries change
   useEffect(() => {
@@ -101,6 +349,11 @@ export default function SettingsPage() {
     const score = Math.round((strong / entries.length) * 100);
     setSecurityScore(score);
   }, [entries]);
+
+  const showPasswordMessage = (text, type = 'success') => {
+    setPasswordMessage({ type, text });
+    setTimeout(() => setPasswordMessage({ type: '', text: '' }), 5000);
+  };
 
   if (loading) return <div className="loading-spinner">Loading settings...</div>;
 
@@ -183,7 +436,6 @@ export default function SettingsPage() {
   return (
     <>
       <style jsx>{`
-        /* Global reset / base */
         * {
           box-sizing: border-box;
         }
@@ -257,7 +509,6 @@ export default function SettingsPage() {
           color: #eef5ff;
         }
 
-        /* Dashboard Grid */
         .dashboard-grid {
           display: grid;
           grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -359,7 +610,6 @@ export default function SettingsPage() {
           border-radius: 1rem;
         }
 
-        /* Toggle switch (green) */
         .toggle-switch {
           position: relative;
           display: inline-block;
@@ -406,7 +656,6 @@ export default function SettingsPage() {
           transform: translateX(24px);
         }
 
-        /* Sync buttons */
         .sync-buttons {
           display: flex;
           flex-wrap: wrap;
@@ -485,7 +734,21 @@ export default function SettingsPage() {
           color: #c7e2ff;
         }
 
-        /* Auth container (unlocked) */
+        .password-message {
+          margin-bottom: 1rem;
+          padding: 0.75rem;
+          border-radius: 0.5rem;
+          text-align: center;
+        }
+        .password-message.success {
+          background: #2E7D32;
+          color: white;
+        }
+        .password-message.error {
+          background: #dc3545;
+          color: white;
+        }
+
         .auth-container {
           min-height: 100vh;
           background: linear-gradient(135deg, #0a2a0a 0%, #0f3a0f 100%);
@@ -535,6 +798,13 @@ export default function SettingsPage() {
             <h1>Security Dashboard & Settings</h1>
           </div>
 
+          {/* Password Change Message */}
+          {passwordMessage.text && (
+            <div className={`password-message ${passwordMessage.type}`}>
+              {passwordMessage.text}
+            </div>
+          )}
+
           {/* Modern Dashboard Metrics */}
           <div className="dashboard-grid">
             <div className="metric-card">
@@ -565,6 +835,26 @@ export default function SettingsPage() {
                 </div>
               )}
             </div>
+          </div>
+
+          <hr className="settings-divider" />
+
+          {/* Change Master Password Section */}
+          <div className="setting-section">
+            <div className="setting-header">
+              <span className="setting-icon">🔑</span>
+              <h3>Change Master Password</h3>
+            </div>
+            <p className="setting-description">
+              Update your master password to enhance security. Your vault will be re-encrypted with the new password.
+            </p>
+            {api && (
+              <ChangePassword 
+                api={api} 
+                onSuccess={(msg) => showPasswordMessage(msg, 'success')}
+                onError={(msg) => showPasswordMessage(msg, 'error')}
+              />
+            )}
           </div>
 
           <hr className="settings-divider" />
