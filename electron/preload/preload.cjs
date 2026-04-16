@@ -130,14 +130,14 @@ const api = {
     }
   },
   
-  // Sync
+  // Sync with graceful error handling (feature coming soon)
   sync: {
     push: async () => {
       try {
         return await ipcRenderer.invoke('sync:push');
       } catch (error) {
-        console.error('[API] sync.push error:', error);
-        return { success: false, error: error.message };
+        console.warn('[API] Sync push not available:', error.message);
+        return { success: false, error: 'Sync feature coming soon' };
       }
     },
     
@@ -145,17 +145,17 @@ const api = {
       try {
         return await ipcRenderer.invoke('sync:pull');
       } catch (error) {
-        console.error('[API] sync.pull error:', error);
-        return { success: false, error: error.message };
+        console.warn('[API] Sync pull not available:', error.message);
+        return { success: false, error: 'Sync feature coming soon' };
       }
     },
     
     getCID: async () => {
       try {
         const result = await ipcRenderer.invoke('sync:getCID');
-        return result.cid;
+        return result?.cid || null;
       } catch (error) {
-        console.error('[API] sync.getCID error:', error);
+        console.warn('[API] Sync getCID not available:', error.message);
         return null;
       }
     }
@@ -180,6 +180,24 @@ const api = {
         return false;
       }
     }
+  },
+  
+  // Vault status change listener
+  onVaultStatusChange: (callback) => {
+    if (typeof callback === 'function') {
+      ipcRenderer.on('vault:status-changed', (event, status) => {
+        callback(status);
+      });
+    } else {
+      console.error('[API] onVaultStatusChange: callback must be a function');
+    }
+  },
+  
+  // Remove vault status listener
+  removeVaultStatusListener: (callback) => {
+    if (typeof callback === 'function') {
+      ipcRenderer.removeListener('vault:status-changed', callback);
+    }
   }
 };
 
@@ -192,11 +210,5 @@ contextBridge.exposeInMainWorld('electron', {
     return await ipcRenderer.invoke(channel, ...args);
   }
 });
-// Add to your preload.cjs, inside the api object
-onVaultStatusChange: (callback) => {
-  ipcRenderer.on('vault:status-changed', (event, status) => {
-    callback(status);
-  });
-}
 
 console.log('[Preload] API exposed. Available methods:', Object.keys(api));

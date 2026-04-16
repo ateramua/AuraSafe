@@ -1,3 +1,4 @@
+// src/components/CategoryModal.jsx
 import { useState, useEffect } from 'react';
 import EntryModal from './EntryModal';
 
@@ -163,9 +164,10 @@ export default function CategoryModal({ isOpen, onClose, category, api }) {
             <EntryModal
                 isOpen={showEntryModal}
                 entry={editingEntry}
-                category={category} // <--- pass the current category here
+                category={category}
                 onClose={() => setShowEntryModal(false)}
                 onSave={handleSaveEntry}
+                zIndex={2100}
             />
         </>
     );

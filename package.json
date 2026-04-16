@@ -64,7 +64,8 @@
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",
     "uuid": "^9.0.0",
-    "ws": "^8.14.2"
+    "ws": "^8.14.2",
+    "zxcvbn": "^4.4.2"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

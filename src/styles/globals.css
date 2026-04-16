@@ -84,7 +84,25 @@ body {
   font-size: 0.875rem;
   text-align: center;
 }
+/* Add to your global CSS file */
+button {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
 
+button:active {
+  transform: scale(0.98);
+}
+
+.generate-button {
+  background: linear-gradient(135deg, #3B82F6, #2563EB);
+}
+
+.generate-button:hover {
+  background: linear-gradient(135deg, #2563EB, #1D4ED8);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59,130,246,0.4);
+}
 /* Vault */
 .vault-container {
   max-width: 1200px;
