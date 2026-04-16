@@ -30,15 +30,27 @@ export async function initVault(masterPassword) {
     ciphertext: dataCipher.toString('base64'),
   });
   metadataStore.set('metadata', data._meta);
+  
+  // Return success object
+  return { success: true };
 }
 
 export async function unlockVault(masterPassword) {
   const saltBase64 = store.get('masterSalt');
-  if (!saltBase64) return false;
+  if (!saltBase64) {
+    console.error('[KeyManager] No master salt found');
+    return { success: false, error: 'Vault not initialized' };
+  }
+  
   const salt = Buffer.from(saltBase64, 'base64');
   const derivedMasterKey = await deriveKey(masterPassword, salt);
   const encryptedVaultKeyObj = store.get('encryptedVaultKey');
-  if (!encryptedVaultKeyObj) return false;
+  
+  if (!encryptedVaultKeyObj) {
+    console.error('[KeyManager] No encrypted vault key found');
+    return { success: false, error: 'Vault not properly initialized' };
+  }
+  
   try {
     const iv = Buffer.from(encryptedVaultKeyObj.iv, 'base64');
     const authTag = Buffer.from(encryptedVaultKeyObj.authTag, 'base64');
@@ -46,15 +58,26 @@ export async function unlockVault(masterPassword) {
     const vaultKeyHex = decrypt(ciphertext, derivedMasterKey, iv, authTag);
     vaultKey = Buffer.from(vaultKeyHex, 'hex');
     masterKey = derivedMasterKey;
-    return true;
+    
+    // Load entries after successful unlock
+    const entries = loadVaultEntries();
+    
+    console.log('[KeyManager] Vault unlocked successfully');
+    return { 
+      success: true, 
+      entries: entries,
+      key: vaultKeyHex
+    };
   } catch (err) {
-    return false;
+    console.error('[KeyManager] Unlock failed:', err);
+    return { success: false, error: 'Invalid password' };
   }
 }
 
 export function lockVault() {
   masterKey = null;
   vaultKey = null;
+  return { success: true };
 }
 
 export function isUnlocked() {
@@ -91,6 +114,7 @@ export function importVaultData(data) {
     ciphertext: ciphertext.toString('base64'),
   });
   setVaultMetadata(data._meta);
+  return { success: true };
 }
 
 export function saveVaultEntries(entries) {
@@ -107,12 +131,14 @@ export function saveVaultEntries(entries) {
     ciphertext: ciphertext.toString('base64'),
   });
   setVaultMetadata(data._meta);
+  return { success: true };
 }
 
 export function loadVaultEntries() {
   if (!vaultKey) throw new Error('Vault is locked');
   const encryptedData = store.get('vaultData');
   if (!encryptedData) return [];
+  
   const iv = Buffer.from(encryptedData.iv, 'base64');
   const authTag = Buffer.from(encryptedData.authTag, 'base64');
   const ciphertext = Buffer.from(encryptedData.ciphertext, 'base64');
@@ -123,17 +149,33 @@ export function loadVaultEntries() {
 
 export async function enableBiometricUnlock() {
   if (!vaultKey) throw new Error('Vault must be unlocked to enable biometrics');
-  return true;
+  return { success: true };
 }
 
 export async function unlockWithBiometric() {
-  return false;
+  return { success: false, error: 'Biometric unlock not configured' };
 }
 
 export async function disableBiometricUnlock() {
-  return true;
+  return { success: true };
 }
 
 export async function isBiometricUnlockAvailable() {
   return false;
+}
+
+// Add reset function for debugging
+export async function resetVault() {
+  try {
+    store.clear();
+    settingsStore.clear();
+    metadataStore.clear();
+    masterKey = null;
+    vaultKey = null;
+    console.log('[KeyManager] Vault reset successfully');
+    return { success: true };
+  } catch (error) {
+    console.error('[KeyManager] Reset failed:', error);
+    return { success: false, error: error.message };
+  }
 }

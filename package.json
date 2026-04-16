@@ -1,82 +1,78 @@
 {
   "name": "aurasafe",
-  "version": "0.1.0",
-  "description": "A spiritual, mindful password manager desktop app with browser extensions",
+  "version": "1.0.0",
+  "description": "AuraSafe secure vault and finance app",
+  "productName": "AuraSafe",
   "main": "electron/main/index.mjs",
   "type": "module",
   "scripts": {
-    "build": "next build",
-    "dev": "concurrently \"next dev\" \"wait-on http://localhost:3000 && NODE_ENV=development electron .\"",
-    "electron:prod": "npm run build && concurrently \"serve -s out -l 3000\" \"wait-on http://localhost:3000 && electron .\"",
-    "start": "electron .",
-    "dist": "npm run clean && npm run build && electron-builder",
-    "clean": "rimraf .next out release dist",
-    "extension:chrome": "web-ext build -s extensions/chrome -a release/extensions",
-    "extension:firefox": "web-ext build -s extensions/firefox -a release/extensions"
-  },
-  "dependencies": {
-    "crypto-js": "^4.2.0",
-    "electron-context-menu": "^4.0.0",
-    "electron-store": "^9.0.0",
-    "electron-updater": "^6.3.9",
-    "express": "^4.18.3",
-    "idb": "^8.0.3",
-    "ipfs-http-client": "^60.0.1",
-    "keytar": "^7.9.0",
-    "next": "^14.2.3",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "sqlite": "^5.1.1",
-    "sqlite3": "^6.0.1",
-    "uuid": "^9.0.1",
-    "ws": "^8.20.0",
-    "zxcvbn": "^4.4.2"
-  },
-  "devDependencies": {
-    "concurrently": "^8.2.2",
-    "cross-env": "^10.1.0",
-    "electron": "^30.0.0",
-    "electron-builder": "^26.8.1",
-    "open-cli": "^7.2.0",
-    "rimraf": "^6.0.1",
-    "serve": "^14.2.6",
-    "wait-on": "^9.0.4",
-    "web-ext": "^7.5.0"
+    "dev": "cross-env NODE_ENV=development next dev",
+    "build": "cross-env NODE_ENV=production next build",
+    "start": "cross-env NODE_ENV=production next start",
+    "electron": "cross-env NODE_ENV=production electron .",
+    "electron:dev": "cross-env NODE_ENV=development electron .",
+    "export": "next build && next export",
+    "dist:mac": "npm run export && electron-builder --mac --arm64"
   },
   "build": {
-    "appId": "com.spiritual.passwordmanager",
-    "productName": "Spiritual Password Manager",
+    "appId": "com.aurasafe.app",
+    "productName": "AuraSafe",
     "directories": {
       "output": "release"
     },
-    "asarUnpack": [
-      "node_modules/sqlite3",
-      "node_modules/keytar"
-    ],
     "files": [
-      "out/**/*",
       "electron/**/*",
-      "src/db/data/**/*",
-      "src/preload/**/*",
-      "node_modules/**/*"
+      "out/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/sqlite3/**/*",
+      "**/node_modules/keytar/**/*",
+      "**/node_modules/ws/**/*"
     ],
     "extraResources": [
       {
-        "from": "src/db/data/",
-        "to": "db/data/"
+        "from": "node_modules/sqlite3",
+        "to": "node_modules/sqlite3"
       }
     ],
+    "npmRebuild": true,
+    "buildDependenciesFromSource": true,
     "mac": {
-      "target": "dmg",
-      "icon": "electron/assets/icon.icns"
-    },
-    "win": {
-      "target": "nsis",
-      "icon": "electron/assets/icon.png"
-    },
-    "linux": {
-      "target": "AppImage",
-      "icon": "electron/assets/icon.png"
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "electron/assets/icon.icns",
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
     }
+  },
+  "dependencies": {
+    "@helia/unixfs": "^7.2.1",
+    "electron-store": "^8.1.0",
+    "express": "^4.18.2",
+    "helia": "^6.1.3",
+    "idb": "^8.0.0",
+    "keytar": "^7.9.0",
+    "next": "14.2.0",
+    "node-fetch": "^3.3.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7",
+    "uuid": "^9.0.0",
+    "ws": "^8.14.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "cross-env": "^7.0.3",
+    "electron": "28.3.3",
+    "electron-builder": "^24.6.4",
+    "typescript": "^5.0.0"
   }
 }

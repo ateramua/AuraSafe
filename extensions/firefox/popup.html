@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="aurasafe-popup">
+        <h3>🔐 AuraSafe</h3>
+        
+        <div id="status" class="aurasafe-status disconnected">
+            ⚠️ Not connected to desktop app
+        </div>
+        
+        <div>
+            <label>Connection Token:</label>
+            <input type="password" id="token" class="aurasafe-input" placeholder="Enter your token">
+            <button id="connectBtn" class="aurasafe-button">Connect to Desktop App</button>
+        </div>
+        
+        <div style="margin-top: 12px; font-size: 11px; color: #6B7280; text-align: center;">
+            Token can be found in AuraSafe desktop app settings
+        </div>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html>

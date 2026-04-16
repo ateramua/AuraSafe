@@ -1,6 +1,11 @@
 // src/lib/store.js
 import { openDB } from 'idb';
-import { getVaultEntries, addVaultEntry, updateVaultEntry, deleteVaultEntry } from './api-client';
+import { 
+  getVaultEntries, 
+  addVaultEntry, 
+  updateVaultEntry, 
+  deleteVaultEntry 
+} from './api-client';
 
 let db = null;
 let cache = null; // in-memory cache for quick access
@@ -69,4 +74,14 @@ export async function deleteEntry(id) {
   await deleteVaultEntry(id);
   cache = cache.filter(e => e.id !== id);
   await saveToIndexedDB(cache);
+}
+
+// Additional exports that might be needed by other components
+export async function getEntries() {
+  return await loadVault();
+}
+
+export async function saveEntries(entries) {
+  cache = entries;
+  await saveToIndexedDB(entries);
 }

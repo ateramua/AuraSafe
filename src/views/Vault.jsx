@@ -40,6 +40,35 @@ export default function Vault() {
     }
   };
 
+  // Listen for vault status changes from main process
+  useEffect(() => {
+    if (!api || !api.onVaultStatusChange) return;
+
+    // Set up listener for vault status changes
+    const handleVaultStatusChange = (status) => {
+      console.log('[Vault] Status changed:', status);
+      setUnlocked(status.unlocked);
+      
+      if (!status.unlocked) {
+        // Vault was locked, clear entries
+        setEntries([]);
+      } else if (status.unlocked) {
+        // Vault was unlocked, reload entries
+        loadEntries();
+      }
+    };
+
+    // Register the listener
+    api.onVaultStatusChange(handleVaultStatusChange);
+
+    // Cleanup listener on unmount
+    return () => {
+      if (api.removeVaultStatusListener) {
+        api.removeVaultStatusListener(handleVaultStatusChange);
+      }
+    };
+  }, [api]);
+
   useEffect(() => {
     if (!api) return;
     const init = async () => {
