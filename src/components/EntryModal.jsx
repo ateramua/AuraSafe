@@ -19,7 +19,7 @@ const categoryFields = {
   ],
   contact: [
     // 👤 Identity
-    { label: 'Full Name', name: 'name', type: 'text', required: true },
+    { label: 'Full Name', name: 'fullName', type: 'text', required: true },
     { label: 'Company', name: 'company', type: 'text' },
 
     // 📞 Contact
@@ -80,20 +80,29 @@ export default function EntryModal({
 
   // ✅ FIXED INITIALIZATION (NO CRASH)
   useEffect(() => {
-    if (!isOpen) return;
+  if (!isOpen) return;
 
-    const initial = {};
+  const initial = {};
 
+  for (const f of fields) {
+    initial[f.name] = '';
+  }
+
+  if (entry) {
     for (const f of fields) {
       initial[f.name] =
-        entry?.data?.[f.name] ??   // ✅ NEW STRUCTURE
-        entry?.[f.name] ??        // fallback for old data
+        entry?.[f.name] ??
+        entry?.data?.[f.name] ??
+        entry?.url ??
+        entry?.username ??
+        entry?.password ??
         '';
     }
+  }
 
-    setFormData(initial);
-    setIsSubmitting(false);
-  }, [isOpen, entry, fields]);
+  setFormData(initial);
+  setIsSubmitting(false);
+}, [isOpen, entry?.id, fields]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -104,24 +113,30 @@ export default function EntryModal({
     e.preventDefault();
 
     if (isSubmitting) return;
+
     setIsSubmitting(true);
 
     try {
-      const base = entry
-        ? { ...entry, ...formData }
-        : { ...formData, type };
+      const base = {
+        ...(entry || {}),
+        ...formData,
+        type: entry?.type || type,
+      };
 
       const saveData = {
         ...base,
+        url: formData.url || formData.address || base.url, // ✅ FIX
         title:
           base.title ||
           base.name ||
-          base.addressLine ||
+          base.addressLine1 ||
           base.bankName ||
           'Untitled Entry',
       };
 
       await onSave(saveData);
+
+      setIsSubmitting(false); // ✅ FIX: reset BEFORE close
       onClose();
     } catch (err) {
       console.error('Save error:', err);
@@ -156,6 +171,9 @@ export default function EntryModal({
             maxWidth: '520px',
             color: '#fff',
             boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+
+            maxHeight: '85vh',   // ✅ ADD THIS
+            overflowY: 'auto',   // ✅ ADD THIS
           }}
           onClick={(e) => e.stopPropagation()}
         >
