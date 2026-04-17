@@ -1,145 +1,88 @@
-import { useState, useEffect, useMemo } from 'react';
+// src/components/EntryModal.jsx
+import { useState, useEffect } from 'react';
 import PasswordGenerator from './PasswordGenerator';
-
-// Map categories to internal type
-const categoryToType = {
-  passwords: 'credential',
-  addresses: 'contact',
-  paymentCards: 'creditCard',
-  bankAccounts: 'bankAccount',
-  driverLicenses: 'driverLicense',
-};
-
-const categoryFields = {
-  credential: [
-    { label: 'Name', name: 'name', type: 'text', required: true },
-    { label: 'Username', name: 'username', type: 'text' },
-    { label: 'URL', name: 'url', type: 'url', placeholder: 'https://example.com' },
-    { label: 'Password', name: 'password', type: 'password' },
-  ],
-  contact: [
-    // 👤 Identity
-    { label: 'Full Name', name: 'fullName', type: 'text', required: true },
-    { label: 'Company', name: 'company', type: 'text' },
-
-    // 📞 Contact
-    { label: 'Full Name', type: 'text' },
-    { label: 'Phone', name: 'phone', type: 'text' },
-    { label: 'Email', name: 'email', type: 'email' },
-
-    // 🏠 Address
-    { label: 'Address Line 1', name: 'addressLine1', type: 'text', required: true },
-    { label: 'Address Line 2', name: 'addressLine2', type: 'text' },
-    { label: 'City', name: 'city', type: 'text' },
-    { label: 'State', name: 'state', type: 'text' },
-    { label: 'ZIP Code', name: 'zip', type: 'text' },
-    { label: 'Country', name: 'country', type: 'text' },
-
-    // 📝 Extra
-    { label: 'Notes', name: 'notes', type: 'text' },
-  ],
-  creditCard: [
-    { label: 'Cardholder Name', name: 'name', type: 'text', required: true },
-    { label: 'Card Number', name: 'cardNumber', type: 'text' },
-    { label: 'Expiry Date', name: 'expiry', type: 'text', placeholder: 'MM/YY' },
-    { label: 'CVV', name: 'cvv', type: 'password' },
-  ],
-  bankAccount: [
-    { label: 'Account Holder', name: 'name', type: 'text', required: true },
-    { label: 'Bank Name', name: 'bankName', type: 'text' },
-    { label: 'Account Number', name: 'accountNumber', type: 'text' },
-    { label: 'Routing Number', name: 'routingNumber', type: 'text' },
-  ],
-  driverLicense: [
-    { label: 'Full Name', name: 'name', type: 'text', required: true },
-    { label: 'License Number', name: 'licenseNumber', type: 'text' },
-    { label: 'State', name: 'state', type: 'text' },
-    { label: 'Expiration Date', name: 'expiry', type: 'text' },
-    { label: 'Date of Birth', name: 'dob', type: 'text' },
-  ],
-};
 
 export default function EntryModal({
   isOpen,
   entry,
   category,
-  categoryType, // ✅ NEW
   onClose,
   onSave,
 }) {
-  const [formData, setFormData] = useState({});
+  const [formData, setFormData] = useState({
+    title: '',
+    username: '',
+    password: '',
+    url: '',
+    notes: '',
+  });
   const [showGenerator, setShowGenerator] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // ✅ FIXED TYPE RESOLUTION
-  const type = useMemo(() => {
-    return entry?.type || categoryType || categoryToType[category] || 'credential';
-  }, [entry, category, categoryType]);
-
-  const fields = categoryFields[type] || [];
-
-  // ✅ FIXED INITIALIZATION (NO CRASH)
+  // Load entry data when modal opens
   useEffect(() => {
-  if (!isOpen) return;
+    if (!isOpen) return;
 
-  const initial = {};
-
-  for (const f of fields) {
-    initial[f.name] = '';
-  }
-
-  if (entry) {
-    for (const f of fields) {
-      initial[f.name] =
-        entry?.[f.name] ??
-        entry?.data?.[f.name] ??
-        entry?.url ??
-        entry?.username ??
-        entry?.password ??
-        '';
+    if (entry && entry.id) {
+      // Direct flat mapping from database fields
+      setFormData({
+        title: entry.title || '',
+        username: entry.username || '',
+        password: entry.password || '',
+        url: entry.url || '',
+        notes: entry.notes || '',
+      });
+      console.log('Loaded entry data:', {
+        title: entry.title,
+        username: entry.username,
+        password: entry.password,
+        url: entry.url,
+        notes: entry.notes,
+      });
+    } else {
+      // New entry - empty form
+      setFormData({
+        title: '',
+        username: '',
+        password: '',
+        url: '',
+        notes: '',
+      });
     }
-  }
-
-  setFormData(initial);
-  setIsSubmitting(false);
-}, [isOpen, entry?.id, fields]);
+    
+    setIsSubmitting(false);
+  }, [isOpen, entry]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
     if (isSubmitting) return;
-
+    
     setIsSubmitting(true);
 
     try {
-      const base = {
-        ...(entry || {}),
+      const saveData = {
         ...formData,
-        type: entry?.type || type,
+        category: 'credential',
+        updated_at: Date.now(),
       };
 
-      const saveData = {
-        ...base,
-        url: formData.url || formData.address || base.url, // ✅ FIX
-        title:
-          base.title ||
-          base.name ||
-          base.addressLine1 ||
-          base.bankName ||
-          'Untitled Entry',
-      };
+      if (entry?.id) {
+        saveData.id = entry.id;
+        saveData.created_at = entry.created_at;
+      } else {
+        saveData.created_at = Date.now();
+      }
 
       await onSave(saveData);
-
-      setIsSubmitting(false); // ✅ FIX: reset BEFORE close
       onClose();
     } catch (err) {
       console.error('Save error:', err);
+      alert('Failed to save: ' + err.message);
       setIsSubmitting(false);
     }
   };
@@ -147,118 +90,123 @@ export default function EntryModal({
   if (!isOpen) return null;
 
   return (
-    <>
-      {/* OVERLAY */}
-      <div
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 99999,
-        }}
-        onClick={onClose}
-      >
-        {/* MODAL */}
-        <div
-          style={{
-            background: '#0f3d24',
-            padding: '2rem',
-            borderRadius: '14px',
-            width: '90%',
-            maxWidth: '520px',
-            color: '#fff',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+    <div style={styles.overlay} onClick={onClose}>
+      <div style={styles.modal} onClick={e => e.stopPropagation()}>
+        <div style={styles.header}>
+          <h2 style={styles.title}>{entry?.id ? 'Edit Entry' : `Add ${category}`}</h2>
+          <button onClick={onClose} style={styles.closeBtn}>×</button>
+        </div>
 
-            maxHeight: '85vh',   // ✅ ADD THIS
-            overflowY: 'auto',   // ✅ ADD THIS
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* HEADER */}
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <h2>
-              {entry ? 'Edit Entry' : `Add ${category}`}
-            </h2>
-
-            <button onClick={onClose} style={{ fontSize: '1.2rem' }}>
-              ×
-            </button>
+        <form onSubmit={handleSubmit}>
+          <div style={styles.field}>
+            <label>Name *</label>
+            <input
+              name="title"
+              value={formData.title}
+              onChange={handleChange}
+              required
+            />
           </div>
 
-          {/* FORM */}
-          <form onSubmit={handleSubmit}>
-            {fields.map((field) => (
-              <label
-                key={field.name}
-                style={{ display: 'block', marginBottom: '10px' }}
-              >
-                <div style={{ fontSize: '12px', opacity: 0.7 }}>
-                  {field.label}
-                </div>
+          <div style={styles.field}>
+            <label>Username</label>
+            <input
+              name="username"
+              value={formData.username}
+              onChange={handleChange}
+            />
+          </div>
 
-                <input
-                  name={field.name}
-                  value={formData[field.name] || ''}
-                  onChange={handleChange}
-                  type={field.type}
-                  placeholder={field.placeholder || ''}
-                  required={field.required || false}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    borderRadius: '6px',
-                    marginTop: '4px',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    background: '#f1faf5',
-                    color: '#1e3a2f',
-                  }}
-                />
-              </label>
-            ))}
-
-            {/* PASSWORD GENERATOR */}
-            {type === 'credential' && (
-              <button
-                type="button"
-                onClick={() => setShowGenerator(true)}
-                style={{ marginTop: '10px' }}
-              >
-                Generate Password
-              </button>
-            )}
-
-            {/* ACTIONS */}
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: '10px',
-                marginTop: '20px',
-              }}
-            >
-              <button type="button" onClick={onClose}>
-                Cancel
-              </button>
-
-              <button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? 'Saving...' : 'Save'}
+          <div style={styles.field}>
+            <label>Password</label>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                name="password"
+                type="password"
+                value={formData.password}
+                onChange={handleChange}
+                style={{ flex: 1 }}
+              />
+              <button type="button" onClick={() => setShowGenerator(true)}>
+                Generate
               </button>
             </div>
-          </form>
-        </div>
+          </div>
+
+          <div style={styles.field}>
+            <label>URL</label>
+            <input
+              name="url"
+              value={formData.url}
+              onChange={handleChange}
+            />
+          </div>
+
+          <div style={styles.field}>
+            <label>Notes</label>
+            <textarea
+              name="notes"
+              value={formData.notes}
+              onChange={handleChange}
+              rows="3"
+            />
+          </div>
+
+          <div style={styles.actions}>
+            <button type="button" onClick={onClose}>Cancel</button>
+            <button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        </form>
       </div>
 
-      {/* PASSWORD GENERATOR */}
       <PasswordGenerator
         isOpen={showGenerator}
         onClose={() => setShowGenerator(false)}
-        onUsePassword={(p) =>
-          setFormData((prev) => ({ ...prev, password: p }))
-        }
+        onUsePassword={(p) => setFormData(prev => ({ ...prev, password: p }))}
       />
-    </>
+    </div>
   );
 }
+
+const styles = {
+  overlay: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(0,0,0,0.8)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 100000,
+  },
+  modal: {
+    background: '#1a4a1f',
+    padding: '24px',
+    borderRadius: '12px',
+    width: '90%',
+    maxWidth: '500px',
+    color: 'white',
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '20px',
+  },
+  title: { margin: 0 },
+  closeBtn: {
+    background: 'none',
+    border: 'none',
+    color: 'white',
+    fontSize: '24px',
+    cursor: 'pointer',
+  },
+  field: { marginBottom: '15px' },
+  actions: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '10px',
+    marginTop: '20px',
+  },
+};
