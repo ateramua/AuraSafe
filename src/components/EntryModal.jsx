@@ -1,5 +1,4 @@
-// src/components/EntryModal.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import PasswordGenerator from './PasswordGenerator';
 
 // Map categories to internal type
@@ -11,7 +10,6 @@ const categoryToType = {
   driverLicenses: 'driverLicense',
 };
 
-// Define fields for each type
 const categoryFields = {
   credential: [
     { label: 'Name', name: 'name', type: 'text', required: true },
@@ -20,21 +18,35 @@ const categoryFields = {
     { label: 'Password', name: 'password', type: 'password' },
   ],
   contact: [
-    { label: 'Address Line', name: 'addressLine', type: 'text', required: true },
+    // 👤 Identity
+    { label: 'Full Name', name: 'name', type: 'text', required: true },
+    { label: 'Company', name: 'company', type: 'text' },
+
+    // 📞 Contact
+    { label: 'Full Name', type: 'text' },
+    { label: 'Phone', name: 'phone', type: 'text' },
+    { label: 'Email', name: 'email', type: 'email' },
+
+    // 🏠 Address
+    { label: 'Address Line 1', name: 'addressLine1', type: 'text', required: true },
+    { label: 'Address Line 2', name: 'addressLine2', type: 'text' },
     { label: 'City', name: 'city', type: 'text' },
     { label: 'State', name: 'state', type: 'text' },
     { label: 'ZIP Code', name: 'zip', type: 'text' },
+    { label: 'Country', name: 'country', type: 'text' },
+
+    // 📝 Extra
+    { label: 'Notes', name: 'notes', type: 'text' },
   ],
   creditCard: [
     { label: 'Cardholder Name', name: 'name', type: 'text', required: true },
     { label: 'Card Number', name: 'cardNumber', type: 'text' },
     { label: 'Expiry Date', name: 'expiry', type: 'text', placeholder: 'MM/YY' },
-    { label: 'CVV', name: 'cvv', type: 'password', placeholder: '3-4 digits' },
+    { label: 'CVV', name: 'cvv', type: 'password' },
   ],
   bankAccount: [
     { label: 'Account Holder', name: 'name', type: 'text', required: true },
     { label: 'Bank Name', name: 'bankName', type: 'text' },
-    { label: 'Account Type', name: 'accountType', type: 'text', placeholder: 'Checking/Savings' },
     { label: 'Account Number', name: 'accountNumber', type: 'text' },
     { label: 'Routing Number', name: 'routingNumber', type: 'text' },
   ],
@@ -42,307 +54,193 @@ const categoryFields = {
     { label: 'Full Name', name: 'name', type: 'text', required: true },
     { label: 'License Number', name: 'licenseNumber', type: 'text' },
     { label: 'State', name: 'state', type: 'text' },
-    { label: 'Expiration Date', name: 'expiry', type: 'text', placeholder: 'MM/DD/YYYY' },
-    { label: 'Date of Birth', name: 'dob', type: 'text', placeholder: 'MM/DD/YYYY' },
+    { label: 'Expiration Date', name: 'expiry', type: 'text' },
+    { label: 'Date of Birth', name: 'dob', type: 'text' },
   ],
 };
 
-export default function EntryModal({ isOpen, entry, category, onClose, onSave, zIndex = 2000 }) {
+export default function EntryModal({
+  isOpen,
+  entry,
+  category,
+  categoryType, // ✅ NEW
+  onClose,
+  onSave,
+}) {
   const [formData, setFormData] = useState({});
   const [showGenerator, setShowGenerator] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Determine type based on entry (editing) or category (new)
-  const type = entry?.type || categoryToType[category] || 'credential';
+  // ✅ FIXED TYPE RESOLUTION
+  const type = useMemo(() => {
+    return entry?.type || categoryType || categoryToType[category] || 'credential';
+  }, [entry, category, categoryType]);
+
   const fields = categoryFields[type] || [];
 
+  // ✅ FIXED INITIALIZATION (NO CRASH)
   useEffect(() => {
-    if (entry) {
-      // Pre-fill editing data
-      const initialData = {};
-      fields.forEach(f => {
-        initialData[f.name] = entry[f.name] || '';
-      });
-      setFormData(initialData);
-    } else {
-      // New entry: create empty fields for the category
-      const initialData = {};
-      fields.forEach(f => (initialData[f.name] = ''));
-      setFormData(initialData);
+    if (!isOpen) return;
+
+    const initial = {};
+
+    for (const f of fields) {
+      initial[f.name] =
+        entry?.data?.[f.name] ??   // ✅ NEW STRUCTURE
+        entry?.[f.name] ??        // fallback for old data
+        '';
     }
-  }, [entry, isOpen, type, fields]);
+
+    setFormData(initial);
+    setIsSubmitting(false);
+  }, [isOpen, entry, fields]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const saveData = entry ? { ...entry, ...formData } : { ...formData, type };
-    onSave(saveData);
-  };
 
-  const handleUseGeneratedPassword = (password) => {
-    setFormData(prev => ({ ...prev, password }));
-    setShowGenerator(false);
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+
+    try {
+      const base = entry
+        ? { ...entry, ...formData }
+        : { ...formData, type };
+
+      const saveData = {
+        ...base,
+        title:
+          base.title ||
+          base.name ||
+          base.addressLine ||
+          base.bankName ||
+          'Untitled Entry',
+      };
+
+      await onSave(saveData);
+      onClose();
+    } catch (err) {
+      console.error('Save error:', err);
+      setIsSubmitting(false);
+    }
   };
 
   if (!isOpen) return null;
 
-  // Helper to check if a field should have a URL preview
-  const renderUrlPreview = (value) => {
-    if (value && (value.startsWith('http://') || value.startsWith('https://'))) {
-      return (
-        <div style={styles.urlPreview}>
-          <span style={styles.urlPreviewIcon}>🔗</span>
-          <a href={value} target="_blank" rel="noopener noreferrer" style={styles.urlPreviewLink}>
-            {value.length > 50 ? value.substring(0, 50) + '...' : value}
-          </a>
-        </div>
-      );
-    }
-    return null;
-  };
-
   return (
     <>
-      <div style={{ ...styles.overlay, zIndex }} onClick={onClose}>
-        <div style={styles.modal} onClick={e => e.stopPropagation()}>
-          <div style={styles.header}>
-            <h2 style={styles.title}>{entry ? 'Edit Entry' : `Add New ${category}`}</h2>
-            <button style={styles.closeButton} onClick={onClose}>×</button>
+      {/* OVERLAY */}
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0, 0, 0, 0.75)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 99999,
+        }}
+        onClick={onClose}
+      >
+        {/* MODAL */}
+        <div
+          style={{
+            background: '#0f3d24',
+            padding: '2rem',
+            borderRadius: '14px',
+            width: '90%',
+            maxWidth: '520px',
+            color: '#fff',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* HEADER */}
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <h2>
+              {entry ? 'Edit Entry' : `Add ${category}`}
+            </h2>
+
+            <button onClick={onClose} style={{ fontSize: '1.2rem' }}>
+              ×
+            </button>
           </div>
 
-          <form style={styles.form} onSubmit={handleSubmit}>
-            {fields.map(field => (
-              <label key={field.name} style={styles.label}>
-                {field.label}:
-                {field.name === 'password' ? (
-                  <div style={styles.passwordContainer}>
-                    <input
-                      name={field.name}
-                      value={formData[field.name] || ''}
-                      onChange={handleChange}
-                      type={field.type}
-                      placeholder={field.placeholder || ''}
-                      required={field.required || false}
-                      style={styles.passwordInput}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowGenerator(true)}
-                      style={styles.generateButton}
-                      onMouseEnter={(e) => e.currentTarget.style.background = '#2563EB'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = '#3B82F6'}
-                      title="Generate strong password"
-                    >
-                      🔐 Generate
-                    </button>
-                  </div>
-                ) : field.name === 'url' ? (
-                  <div>
-                    <input
-                      name={field.name}
-                      value={formData[field.name] || ''}
-                      onChange={handleChange}
-                      type={field.type}
-                      placeholder={field.placeholder || ''}
-                      required={field.required || false}
-                      style={styles.input}
-                    />
-                    {renderUrlPreview(formData[field.name])}
-                  </div>
-                ) : (
-                  <input
-                    name={field.name}
-                    value={formData[field.name] || ''}
-                    onChange={handleChange}
-                    type={field.type}
-                    placeholder={field.placeholder || ''}
-                    required={field.required || false}
-                    style={styles.input}
-                  />
-                )}
+          {/* FORM */}
+          <form onSubmit={handleSubmit}>
+            {fields.map((field) => (
+              <label
+                key={field.name}
+                style={{ display: 'block', marginBottom: '10px' }}
+              >
+                <div style={{ fontSize: '12px', opacity: 0.7 }}>
+                  {field.label}
+                </div>
+
+                <input
+                  name={field.name}
+                  value={formData[field.name] || ''}
+                  onChange={handleChange}
+                  type={field.type}
+                  placeholder={field.placeholder || ''}
+                  required={field.required || false}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    borderRadius: '6px',
+                    marginTop: '4px',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    background: '#f1faf5',
+                    color: '#1e3a2f',
+                  }}
+                />
               </label>
             ))}
 
-            <div style={styles.actions}>
-              <button type="submit" style={styles.saveButton}>
-                {entry ? 'Save Changes' : 'Add Entry'}
+            {/* PASSWORD GENERATOR */}
+            {type === 'credential' && (
+              <button
+                type="button"
+                onClick={() => setShowGenerator(true)}
+                style={{ marginTop: '10px' }}
+              >
+                Generate Password
               </button>
-              <button type="button" style={styles.cancelButton} onClick={onClose}>
+            )}
+
+            {/* ACTIONS */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '10px',
+                marginTop: '20px',
+              }}
+            >
+              <button type="button" onClick={onClose}>
                 Cancel
+              </button>
+
+              <button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? 'Saving...' : 'Save'}
               </button>
             </div>
           </form>
         </div>
       </div>
 
+      {/* PASSWORD GENERATOR */}
       <PasswordGenerator
         isOpen={showGenerator}
         onClose={() => setShowGenerator(false)}
-        onUsePassword={handleUseGeneratedPassword}
+        onUsePassword={(p) =>
+          setFormData((prev) => ({ ...prev, password: p }))
+        }
       />
     </>
   );
 }
-
-const styles = {
-  overlay: {
-    position: 'fixed',
-    inset: 0,
-    background: 'rgba(0,0,0,0.85)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backdropFilter: 'blur(8px)',
-  },
-  modal: {
-    background: '#1F2937',
-    borderRadius: '1rem',
-    padding: '2rem',
-    width: '90%',
-    maxWidth: '500px',
-    maxHeight: '90vh',
-    overflowY: 'auto',
-    boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
-    color: '#F3F4F6',
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '1.5rem',
-  },
-  title: {
-    fontSize: '1.5rem',
-    fontWeight: 600,
-    color: '#C8E6C9',
-  },
-  closeButton: {
-    background: 'transparent',
-    border: 'none',
-    color: '#fff',
-    fontSize: '1.5rem',
-    cursor: 'pointer',
-    padding: '0.5rem',
-    borderRadius: '0.5rem',
-    transition: 'background 0.2s',
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1rem',
-  },
-  label: {
-    display: 'flex',
-    flexDirection: 'column',
-    fontSize: '0.9rem',
-    color: '#C8E6C9',
-  },
-  input: {
-    marginTop: '0.3rem',
-    padding: '0.5rem 0.7rem',
-    borderRadius: '0.5rem',
-    border: '1px solid #4caf50',
-    background: '#111827',
-    color: '#F3F4F6',
-    fontSize: '0.9rem',
-  },
-  passwordContainer: {
-    display: 'flex',
-    gap: '0.5rem',
-    marginTop: '0.3rem',
-  },
-  passwordInput: {
-    flex: 1,
-    padding: '0.5rem 0.7rem',
-    borderRadius: '0.5rem',
-    border: '1px solid #4caf50',
-    background: '#111827',
-    color: '#F3F4F6',
-    fontSize: '0.9rem',
-  },
-  generateButton: {
-    padding: '0.5rem 1rem',
-    background: '#3B82F6',
-    color: 'white',
-    border: 'none',
-    borderRadius: '0.5rem',
-    cursor: 'pointer',
-    fontSize: '0.875rem',
-    fontWeight: '500',
-    whiteSpace: 'nowrap',
-    transition: 'all 0.2s ease',
-    boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-  },
-  urlPreview: {
-    marginTop: '0.5rem',
-    padding: '0.5rem',
-    background: '#111827',
-    borderRadius: '0.5rem',
-    border: '1px solid #2d4a2d',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-    fontSize: '0.8rem',
-  },
-  urlPreviewIcon: {
-    fontSize: '1rem',
-  },
-  urlPreviewLink: {
-    color: '#60A5FA',
-    textDecoration: 'none',
-    wordBreak: 'break-all',
-    flex: 1,
-  },
-  actions: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '1rem',
-    marginTop: '1.5rem',
-  },
-  saveButton: {
-    padding: '0.6rem 1.5rem',
-    background: '#2E7D32',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '0.5rem',
-    cursor: 'pointer',
-    fontSize: '0.9rem',
-    fontWeight: '500',
-    transition: 'all 0.2s ease',
-  },
-  cancelButton: {
-    padding: '0.6rem 1.5rem',
-    background: 'transparent',
-    color: '#C8E6C9',
-    border: '1px solid #4caf50',
-    borderRadius: '0.5rem',
-    cursor: 'pointer',
-    fontSize: '0.9rem',
-    fontWeight: '500',
-    transition: 'all 0.2s ease',
-  },
-};
-
-// Add hover styles via style tag
-const styleSheet = document.createElement("style");
-styleSheet.textContent = `
-  button:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  }
-  button:active {
-    transform: translateY(0);
-  }
-  .generate-button:hover {
-    background: #2563EB !important;
-  }
-  .url-preview-link:hover {
-    text-decoration: underline;
-  }
-`;
-document.head.appendChild(styleSheet);

@@ -296,52 +296,145 @@ ipcMain.handle('sync:getCID', async () => {
   }
 });
 
-// Vault CRUD operations with unlock checks
+// ===================== ENHANCED VAULT CRUD OPERATIONS =====================
+
+// ================= SAVE ENTRY (CREATE OR UPDATE) - FIXED UNLOCK CHECK =================
 ipcMain.handle('vault:saveEntry', async (event, entry) => {
-  if (!vaultUnlocked && !isUnlocked()) {
+  const unlocked = vaultUnlocked || isUnlocked();
+
+  if (!unlocked) {
     throw new Error('Vault is locked');
   }
-  
+
   try {
     const db = await getDatabase();
     const now = Date.now();
-    
-    if (entry.id) {
+
+    // Normalize input (prevents silent DB issues)
+    const safeEntry = {
+      id: entry?.id,
+      title: entry?.title || entry?.name || 'Untitled',
+      username: entry?.username || '',
+      password: entry?.password || '',
+      url: entry?.url || '',
+      notes: entry?.notes || '',
+      category: entry?.category || 'credential',
+    };
+
+    // ================= UPDATE =================
+    if (safeEntry.id) {
       await db.run(
         `UPDATE vault_entries SET 
-          title = ?, username = ?, password = ?, url = ?, notes = ?, category = ?, updated_at = ?
+          title = ?, 
+          username = ?, 
+          password = ?, 
+          url = ?, 
+          notes = ?, 
+          category = ?, 
+          updated_at = ?
          WHERE id = ?`,
-        entry.title, entry.username, entry.password, entry.url, 
-        entry.notes, entry.category, now, entry.id
+        [
+          safeEntry.title,
+          safeEntry.username,
+          safeEntry.password,
+          safeEntry.url,
+          safeEntry.notes,
+          safeEntry.category,
+          now,
+          safeEntry.id
+        ]
       );
-      return { ...entry, updatedAt: now };
-    } else {
-      const id = randomBytes(16).toString('hex');
-      await db.run(
-        `INSERT INTO vault_entries (id, title, username, password, url, notes, category, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        id, entry.title, entry.username, entry.password, entry.url, 
-        entry.notes, entry.category, now, now
-      );
-      return { ...entry, id, createdAt: now, updatedAt: now };
+
+      return {
+        ...safeEntry,
+        updatedAt: now
+      };
     }
+
+    // ================= INSERT =================
+    const id = randomBytes(16).toString('hex');
+
+    await db.run(
+      `INSERT INTO vault_entries (
+        id,
+        title,
+        username,
+        password,
+        url,
+        notes,
+        category,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        safeEntry.title,
+        safeEntry.username,
+        safeEntry.password,
+        safeEntry.url,
+        safeEntry.notes,
+        safeEntry.category,
+        now,
+        now
+      ]
+    );
+
+    return {
+      ...safeEntry,
+      id,
+      createdAt: now,
+      updatedAt: now
+    };
+
   } catch (error) {
     console.error('[vault:saveEntry] Error:', error);
     throw error;
   }
 });
 
+// ================= DELETE ENTRY - FIXED UNLOCK CHECK =================
 ipcMain.handle('vault:deleteEntry', async (event, id) => {
-  if (!vaultUnlocked && !isUnlocked()) {
+ const unlocked = vaultUnlocked || isUnlocked();
+
+  if (!unlocked) {
     throw new Error('Vault is locked');
   }
-  
+
   try {
     const db = await getDatabase();
-    await db.run('DELETE FROM vault_entries WHERE id = ?', id);
+
+    await db.run(
+      `DELETE FROM vault_entries WHERE id = ?`,
+      [id]
+    );
+
     return { success: true };
+
   } catch (error) {
     console.error('[vault:deleteEntry] Error:', error);
+    throw error;
+  }
+});
+
+// ================= GET ENTRIES - FIXED UNLOCK CHECK =================
+ipcMain.handle('vault:getEntries', async () => {
+  const unlocked = vaultUnlocked || isUnlocked();
+
+  if (!unlocked) {
+    throw new Error('Vault is locked');
+  }
+
+  try {
+    const db = await getDatabase();
+
+    const rows = await db.all(
+      `SELECT * FROM vault_entries ORDER BY created_at DESC`
+    );
+
+    return rows || [];
+
+  } catch (error) {
+    console.error('[vault:getEntries] Error:', error);
     throw error;
   }
 });
@@ -450,22 +543,11 @@ ipcMain.handle('vault:isUnlocked', async () => {
   }
 });
 
-ipcMain.handle('vault:getEntries', async () => {
-  if (!vaultUnlocked && !isUnlocked()) {
-    throw new Error('Vault is locked');
-  }
-  
-  try {
-    const entries = await loadVaultEntries();
-    return entries;
-  } catch (error) {
-    console.error('[vault:getEntries] Error:', error);
-    throw error;
-  }
-});
-
+// ================= SAVE ENTRIES (BULK) - FIXED UNLOCK CHECK =================
 ipcMain.handle('vault:saveEntries', async (event, entries) => {
-  if (!vaultUnlocked && !isUnlocked()) {
+  const unlocked = vaultUnlocked || isUnlocked();
+
+  if (!unlocked) {
     throw new Error('Vault is locked');
   }
   

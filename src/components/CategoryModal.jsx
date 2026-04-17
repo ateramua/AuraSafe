@@ -1,4 +1,3 @@
-// src/components/CategoryModal.jsx
 import { useState, useEffect } from 'react';
 import EntryModal from './EntryModal';
 
@@ -12,85 +11,160 @@ const categoryToType = {
     help: null,
 };
 
-export default function CategoryModal({ isOpen, onClose, category, api }) {
+export default function CategoryModal({
+    isOpen,
+    onClose,
+    category,
+    api,
+}) {
     const [entries, setEntries] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
     const [showEntryModal, setShowEntryModal] = useState(false);
     const [editingEntry, setEditingEntry] = useState(null);
+    const [isSaving, setIsSaving] = useState(false);
+    const [selectedIds, setSelectedIds] = useState([]);
 
     const entryType = categoryToType[category];
 
+    // =========================
+    // FETCH ENTRIES
+    // =========================
     const fetchEntries = async () => {
-        if (!api || category === 'help') {
-            setLoading(false);
-            return;
-        }
+        if (!api || category === 'help') return;
+
         setLoading(true);
         try {
-            const allEntries = await api.getVaultEntries();
-            let filtered = allEntries;
-            if (category !== 'all') {
-                filtered = allEntries.filter(e => e.type === entryType);
-            }
+            const all = (await api.getVaultEntries()) || [];
+
+            const filtered =
+                category === 'all'
+                    ? all
+                    : all.filter((e) => e.type === entryType);
+
             setEntries(filtered);
         } catch (err) {
-            console.error('Failed to fetch entries:', err);
+            console.error(err);
+            setEntries([]);
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        if (isOpen) {
-            fetchEntries();
-        }
+        if (isOpen) fetchEntries();
     }, [isOpen, category]);
 
+    // =========================
+    // ADD / EDIT
+    // =========================
     const handleAdd = () => {
+        if (showEntryModal) return;
         setEditingEntry(null);
         setShowEntryModal(true);
     };
 
+    // SIMPLIFIED EDIT - preserves full data structure without flattening
     const handleEdit = (entry) => {
-        setEditingEntry(entry);
+        if (showEntryModal) return;
+
+        setEditingEntry({
+            id: entry.id,
+            type: entry.type,
+            title: entry.title,
+            data: entry.data || {},
+        });
+
         setShowEntryModal(true);
     };
 
-    const handleDelete = async (id) => {
-        if (!confirm('Delete this entry?')) return;
-        try {
-            await api.deleteVaultEntry(id);
-            fetchEntries();
-        } catch (err) {
-            console.error('Delete failed:', err);
-        }
-    };
-
+    // =========================
+    // SAVE ENTRY (UNIFIED FOR ALL TYPES)
+    // =========================
     const handleSaveEntry = async (entryData) => {
+        if (isSaving || !api) return;
+
+        setIsSaving(true);
+
         try {
-            if (entryData.id) {
-                await api.saveVaultEntry(entryData);
-            } else {
-                const newEntry = { ...entryData, type: entryType, id: Date.now().toString() };
-                await api.saveVaultEntry(newEntry);
-            }
+            const payload = {
+                id: entryData.id,
+                type: entryData.type || entryType,
+                data: entryData.data || {},
+                title:
+                    entryData.title ||
+                    entryData.data?.name ||
+                    entryData.data?.bankName ||
+                    entryData.data?.cardNumber ||
+                    entryData.data?.addressLine1 ||
+                    'Untitled Entry',
+            };
+
+            await api.saveVaultEntry(payload);
+
             setShowEntryModal(false);
-            fetchEntries();
-        } catch (err) {
-            alert('Failed to save entry: ' + err.message);
+            setEditingEntry(null);
+
+            await fetchEntries();
+        } finally {
+            setIsSaving(false);
         }
     };
 
-    if (!isOpen) return null;
+    const handleCloseEntryModal = () => {
+        if (isSaving) return;
+        setShowEntryModal(false);
+        setEditingEntry(null);
+    };
 
-    // Help category special display
+    // =========================
+    // SELECTION
+    // =========================
+    const toggleSelectAll = () => {
+        if (selectedIds.length === entries.length) {
+            setSelectedIds([]);
+        } else {
+            setSelectedIds(entries.map((e) => e.id));
+        }
+    };
+
+    const toggleSelectOne = (id) => {
+        setSelectedIds((prev) =>
+            prev.includes(id)
+                ? prev.filter((x) => x !== id)
+                : [...prev, id]
+        );
+    };
+
+    // =========================
+    // DELETE
+    // =========================
+    const handleBulkDelete = async () => {
+        if (!api || selectedIds.length === 0) return;
+
+        if (window.confirm(`Delete ${selectedIds.length} selected item(s)?`)) {
+            try {
+                await Promise.all(
+                    selectedIds.map((id) => api.deleteVaultEntry(id))
+                );
+                setSelectedIds([]);
+                await fetchEntries();
+            } catch (err) {
+                console.error('Bulk delete failed:', err);
+                alert('Failed to delete entries: ' + err.message);
+            }
+        }
+    };
+
+    // =========================
+    // HELP CATEGORY
+    // =========================
     if (category === 'help') {
         return (
             <div style={styles.overlay} onClick={onClose}>
-                <div style={styles.modal} onClick={e => e.stopPropagation()}>
+                <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
                     <div style={styles.header}>
-                        <h2 style={styles.title}>Help & Support</h2>
-                        <button style={styles.closeButton} onClick={onClose}>×</button>
+                        <h2 style={styles.titleText}>Help & Support</h2>
+                        <button onClick={onClose} style={styles.closeBtn}>✕</button>
                     </div>
                     <div style={styles.content}>
                         <p>Welcome to AuraSafe Help! Here are some resources:</p>
@@ -106,6 +180,8 @@ export default function CategoryModal({ isOpen, onClose, category, api }) {
         );
     }
 
+    if (!isOpen) return null;
+
     const categoryTitle = {
         all: 'All Items',
         passwords: 'Passwords',
@@ -118,191 +194,302 @@ export default function CategoryModal({ isOpen, onClose, category, api }) {
     return (
         <>
             <div style={styles.overlay} onClick={onClose}>
-                <div style={styles.modal} onClick={e => e.stopPropagation()}>
+                <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+                    {/* HEADER */}
                     <div style={styles.header}>
-                        <h2 style={styles.title}>{categoryTitle}</h2>
-                        <button style={styles.closeButton} onClick={onClose}>×</button>
-                    </div>
-                    <div style={styles.content}>
-                        <div style={styles.actions}>
-                            <button style={styles.addButton} onClick={handleAdd}>
-                                + Add New
-                            </button>
-                            <button style={styles.cancelButton} onClick={onClose}>
-                                Cancel
-                            </button>
+                        <div style={styles.titleWrap}>
+                            <h2 style={styles.titleText}>{categoryTitle}</h2>
+                            {entries.length > 0 && (
+                                <span style={styles.countBadge}>
+                                    {entries.length} items
+                                </span>
+                            )}
                         </div>
 
-                        {loading ? (
-                            <div style={styles.loading}>Loading entries...</div>
-                        ) : entries.length === 0 ? (
-                            <div style={styles.empty}>No entries yet. Click "Add New" to create one.</div>
-                        ) : (
-                            <div style={styles.list}>
-                                {entries.map(entry => (
-                                    <div key={entry.id} style={styles.listItem}>
-                                        <div style={styles.itemInfo}>
-                                            <strong>{entry.name || 'Unnamed'}</strong>
-                                            {entry.username && <span> – {entry.username}</span>}
-                                            {entry.cardNumber && <span> – ****{entry.cardNumber.slice(-4)}</span>}
-                                            {entry.bankName && <span> – {entry.bankName}</span>}
-                                            {entry.licenseNumber && <span> – {entry.licenseNumber}</span>}
-                                        </div>
-                                        <div style={styles.itemActions}>
-                                            <button style={styles.editButton} onClick={() => handleEdit(entry)}>Edit</button>
-                                            <button style={styles.deleteButton} onClick={() => handleDelete(entry.id)}>Delete</button>
-                                        </div>
-                                    </div>
-                                ))}
+                        <div style={styles.headerActions}>
+                            <button onClick={handleAdd} style={styles.addBtn}>
+                                + Add Entry
+                            </button>
+                            <button onClick={onClose} style={styles.closeBtn}>
+                                ✕
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* CONTENT */}
+                    <div style={styles.content}>
+                        {entries.length > 0 && (
+                            <div style={styles.topBar}>
+                                <label style={styles.selectAll}>
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedIds.length === entries.length}
+                                        onChange={toggleSelectAll}
+                                    />
+                                    Select All
+                                </label>
+
+                                {selectedIds.length > 0 && (
+                                    <button
+                                        onClick={handleBulkDelete}
+                                        style={styles.deleteBulk}
+                                    >
+                                        Delete ({selectedIds.length})
+                                    </button>
+                                )}
                             </div>
+                        )}
+
+                        {loading ? (
+                            <p style={styles.loading}>Loading entries...</p>
+                        ) : entries.length === 0 ? (
+                            <p style={styles.empty}>No entries yet. Click "Add Entry" to create one.</p>
+                        ) : (
+                            entries.map((e) => {
+                                const d = e.data || {};
+                                return (
+                                    <div key={e.id} style={styles.item}>
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedIds.includes(e.id)}
+                                            onChange={() => toggleSelectOne(e.id)}
+                                            style={styles.checkbox}
+                                        />
+
+                                        <div style={{ flex: 1 }}>
+                                            <div style={styles.itemTitle}>
+                                                {e.title ||
+                                                    d.name ||
+                                                    d.fullName ||
+                                                    d.addressLine ||
+                                                    'Untitled Entry'}
+                                            </div>
+
+                                            <div style={styles.subText}>
+                                                {/* Credential fields */}
+                                                {d.username && <span>👤 {d.username}</span>}
+                                                {d.url && <span>🔗 {d.url}</span>}
+
+                                                {/* Contact/Address fields */}
+                                                {d.fullName && <span>👤 {d.fullName}</span>}
+                                                {d.addressLine && <span>📍 {d.addressLine}</span>}
+                                                {d.city && <span>🏙️ {d.city}</span>}
+                                                {d.state && <span>📌 {d.state}</span>}
+                                                {d.phone && <span>📞 {d.phone}</span>}
+                                                {d.email && <span>📧 {d.email}</span>}
+
+                                                {/* Credit Card fields */}
+                                                {d.cardNumber && <span>💳 ••••{d.cardNumber.slice(-4)}</span>}
+                                                {d.expiry && <span>📅 {d.expiry}</span>}
+
+                                                {/* Bank Account fields */}
+                                                {d.bankName && <span>🏦 {d.bankName}</span>}
+                                                {d.accountNumber && <span>🔢 ••••{d.accountNumber.slice(-4)}</span>}
+
+                                                {/* Driver License fields */}
+                                                {d.licenseNumber && <span>📄 License: {d.licenseNumber}</span>}
+                                                {d.dob && <span>🎂 {d.dob}</span>}
+                                            </div>
+                                        </div>
+
+                                        <button onClick={() => handleEdit(e)} style={styles.editBtn}>
+                                            Edit
+                                        </button>
+                                    </div>
+                                );
+                            })
                         )}
                     </div>
                 </div>
             </div>
 
-            {/* EntryModal with higher zIndex to ensure it's visible */}
+            {/* ENTRY MODAL */}
             <EntryModal
                 isOpen={showEntryModal}
                 entry={editingEntry}
                 category={category}
-                onClose={() => setShowEntryModal(false)}
+                categoryType={entryType}
+                onClose={handleCloseEntryModal}
                 onSave={handleSaveEntry}
-                zIndex={2100}
+                zIndex={100000}
             />
         </>
     );
 }
 
+// =========================
+// STYLES
+// =========================
 const styles = {
     overlay: {
         position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'rgba(0, 0, 0, 0.8)',
+        inset: 0,
+        background: 'rgba(0,0,0,0.75)',
         backdropFilter: 'blur(8px)',
         display: 'flex',
-        alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 1100,
+        alignItems: 'center',
+        zIndex: 99999,
     },
+
     modal: {
-        background: 'linear-gradient(145deg, #1F2A1F, #172417)',
-        borderRadius: '1.5rem',
+        background: '#0f3d24',
+        padding: '1.5rem',
+        borderRadius: '1rem',
         width: '90%',
-        maxWidth: '700px',
-        maxHeight: '85vh',
-        display: 'flex',
-        flexDirection: 'column',
-        boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5), 0 0 0 1px rgba(76,175,80,0.3)',
-        color: '#F3F4F6',
-        fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+        maxWidth: '650px',
+        color: '#fff',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+        border: '1px solid rgba(76,175,80,0.3)',
     },
+
     header: {
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: '1rem 1.5rem',
-        borderBottom: '1px solid rgba(76, 175, 80, 0.3)',
+        marginBottom: '1rem',
+        paddingBottom: '0.5rem',
+        borderBottom: '1px solid rgba(76,175,80,0.3)',
     },
-    title: {
+
+    titleWrap: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+    },
+
+    titleText: {
+        margin: 0,
         fontSize: '1.5rem',
         fontWeight: 600,
         background: 'linear-gradient(120deg, #fff, #a5d6a5)',
         WebkitBackgroundClip: 'text',
         backgroundClip: 'text',
         color: 'transparent',
-        margin: 0,
     },
-    closeButton: {
-        background: 'rgba(255, 255, 255, 0.1)',
-        border: 'none',
+
+    countBadge: {
+        background: '#1b5e20',
+        padding: '4px 10px',
+        borderRadius: '20px',
+        fontSize: '12px',
+    },
+
+    headerActions: {
+        display: 'flex',
+        gap: '10px',
+    },
+
+    addBtn: {
+        background: 'linear-gradient(135deg, #2e7d32, #1b5e20)',
         color: '#fff',
-        fontSize: '1.5rem',
+        border: '1px solid rgba(255,255,255,0.15)',
+        padding: '8px 16px',
+        borderRadius: '10px',
         cursor: 'pointer',
-        padding: '0.5rem 0.8rem',
-        borderRadius: '2rem',
-    },
-    content: {
-        padding: '1.5rem',
-        overflowY: 'auto',
-        flex: 1,
-    },
-    actions: {
-        display: 'flex',
-        justifyContent: 'flex-end',
-        gap: '1rem',
-        marginBottom: '1.5rem',
-    },
-    addButton: {
-        padding: '0.7rem 1.8rem',
-        background: 'linear-gradient(135deg, #2E7D32, #1B5E20)',
-        color: 'white',
-        border: 'none',
-        borderRadius: '2rem',
-        fontSize: '0.9rem',
         fontWeight: '600',
+        transition: 'all 0.2s ease',
+    },
+
+    closeBtn: {
+        background: 'rgba(255,255,255,0.08)',
+        color: '#fff',
+        width: '38px',
+        height: '38px',
+        borderRadius: '10px',
+        border: '1px solid rgba(255,255,255,0.15)',
         cursor: 'pointer',
+        fontSize: '18px',
+        transition: 'all 0.2s ease',
     },
-    cancelButton: {
-        padding: '0.7rem 1.5rem',
-        background: 'transparent',
-        color: '#C8E6C9',
-        border: '1px solid #4caf50',
-        borderRadius: '2rem',
-        fontSize: '0.9rem',
-        fontWeight: '500',
-        cursor: 'pointer',
+
+    content: {
+        marginTop: '1rem',
+        maxHeight: '60vh',
+        overflowY: 'auto',
+        paddingRight: '0.5rem',
     },
-    loading: {
-        textAlign: 'center',
-        padding: '2rem',
-        color: '#9CA3AF',
-    },
-    empty: {
-        textAlign: 'center',
-        padding: '2rem',
-        color: '#9CA3AF',
-        fontStyle: 'italic',
-    },
-    list: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.75rem',
-    },
-    listItem: {
-        background: '#111827',
-        padding: '0.75rem 1rem',
-        borderRadius: '0.5rem',
+
+    topBar: {
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        border: '1px solid #2d4a2d',
+        marginBottom: '12px',
+        paddingBottom: '8px',
+        borderBottom: '1px solid rgba(255,255,255,0.1)',
     },
-    itemInfo: {
-        flex: 1,
-        fontSize: '0.9rem',
-        color: '#F3F4F6',
-    },
-    itemActions: {
+
+    selectAll: {
+        fontSize: '12px',
         display: 'flex',
-        gap: '0.5rem',
-    },
-    editButton: {
-        background: '#ffc107',
-        color: '#000',
-        border: 'none',
-        padding: '0.25rem 0.5rem',
-        borderRadius: '0.25rem',
+        alignItems: 'center',
+        gap: '6px',
         cursor: 'pointer',
     },
-    deleteButton: {
-        background: '#dc3545',
+
+    deleteBulk: {
+        background: '#b91c1c',
         color: '#fff',
         border: 'none',
-        padding: '0.25rem 0.5rem',
-        borderRadius: '0.25rem',
+        padding: '6px 12px',
+        borderRadius: '8px',
         cursor: 'pointer',
+        fontSize: '12px',
+        transition: 'all 0.2s ease',
+    },
+
+    item: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        padding: '0.75rem',
+        marginBottom: '0.5rem',
+        background: '#1a4a1f',
+        borderRadius: '0.5rem',
+        transition: 'transform 0.2s ease',
+    },
+
+    checkbox: {
+        width: '18px',
+        height: '18px',
+        accentColor: '#2e7d32',
+        cursor: 'pointer',
+    },
+
+    itemTitle: {
+        fontWeight: 600,
+        marginBottom: '4px',
+    },
+
+    subText: {
+        fontSize: '12px',
+        opacity: 0.75,
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '8px',
+    },
+
+    editBtn: {
+        background: '#3B82F6',
+        color: '#fff',
+        border: 'none',
+        padding: '6px 12px',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        fontSize: '12px',
+        transition: 'all 0.2s ease',
+    },
+
+    loading: {
+        textAlign: 'center',
+        padding: '2rem',
+        color: '#c8e6c9',
+    },
+
+    empty: {
+        textAlign: 'center',
+        padding: '2rem',
+        color: '#c8e6c9',
+        fontStyle: 'italic',
     },
 };

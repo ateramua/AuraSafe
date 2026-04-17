@@ -84,7 +84,8 @@ body {
   font-size: 0.875rem;
   text-align: center;
 }
-/* Add to your global CSS file */
+
+/* Global button behavior */
 button {
   cursor: pointer;
   transition: all 0.2s ease;
@@ -94,15 +95,6 @@ button:active {
   transform: scale(0.98);
 }
 
-.generate-button {
-  background: linear-gradient(135deg, #3B82F6, #2563EB);
-}
-
-.generate-button:hover {
-  background: linear-gradient(135deg, #2563EB, #1D4ED8);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(59,130,246,0.4);
-}
 /* Vault */
 .vault-container {
   max-width: 1200px;
@@ -141,6 +133,7 @@ button:active {
 /* Entries */
 .entries-grid {
   display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 1.5rem;
 }
 
@@ -200,6 +193,7 @@ button:active {
   background: rgba(255,255,255,0.95);
   border-radius: 1.5rem;
   padding: 2rem;
+  color: #1a202c;
 }
 
 .setting-description {
@@ -233,10 +227,6 @@ button:active {
   border-radius: 34px;
 }
 
-input:checked + .toggle-slider {
-  background: #2d6a4f;
-}
-
 /* Biometric button */
 .biometric-button {
   background: #2d6a4f;
@@ -263,10 +253,15 @@ input:checked + .toggle-slider {
   background: rgba(255,255,255,0.95);
   border-radius: 1.5rem;
   padding: 2rem;
+  color: #1a202c;
 }
 
 .stat-value {
   color: #2d6a4f;
+}
+
+.stat-label {
+  color: #4a5568;
 }
 
 /* Loading */
@@ -275,9 +270,7 @@ input:checked + .toggle-slider {
   padding: 3rem;
 }
 
-/* ===========================
-   Security page styles
-=========================== */
+/* Security page */
 .security-page {
   max-width: 1200px;
   margin: 2rem auto;
@@ -307,41 +300,26 @@ input:checked + .toggle-slider {
   cursor: pointer;
   font-size: 0.9rem;
   transition: background 0.2s;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
 }
+
 .back-button:hover {
   background: #cbd5e0;
 }
 
-/* Ensure dashboard text contrast */
-.dashboard-card {
-  background: rgba(255, 255, 255, 0.95);
-  color: #1a202c;
-}
-.dashboard-card h2,
-.dashboard-card h3 {
-  color: #1e3a2f;
-}
-.dashboard-card p,
-.dashboard-card li {
-  color: #2d3748;
-}
-.stat-value {
-  color: #2d6a4f;
-}
-.stat-label {
-  color: #4a5568;
-}
 .issue-section {
   background: #fff5f0;
-  border-left-color: #ed8936;
+  border-left: 4px solid #ed8936;
+  padding: 1rem;
+  border-radius: 0.5rem;
 }
+
 .issue-section h3 {
   color: #c05621;
 }
+
 .success-message {
   background: #e6fffa;
   color: #2c7a4d;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
 }

@@ -1,17 +1,17 @@
 // src/lib/store.js
 import { openDB } from 'idb';
-import { 
-  getVaultEntries, 
-  addVaultEntry, 
-  updateVaultEntry, 
-  deleteVaultEntry 
+import {
+  getVaultEntries,
+  saveVaultEntry,
+  deleteVaultEntry,
 } from './api-client';
 
 let db = null;
-let cache = null; // in-memory cache for quick access
+let cache = null;
 
 async function getDB() {
   if (db) return db;
+
   db = await openDB('password-manager', 1, {
     upgrade(db) {
       if (!db.objectStoreNames.contains('entries')) {
@@ -19,66 +19,76 @@ async function getDB() {
       }
     },
   });
+
   return db;
 }
 
 async function loadFromIndexedDB() {
   const db = await getDB();
-  const entries = await db.getAll('entries');
-  return entries;
+  return await db.getAll('entries');
 }
 
 async function saveToIndexedDB(entries) {
   const db = await getDB();
   const tx = db.transaction('entries', 'readwrite');
   const store = tx.objectStore('entries');
+
   await store.clear();
   for (const entry of entries) {
     await store.put(entry);
   }
+
   await tx.done;
 }
 
+// ===== LOAD =====
 export async function loadVault() {
-  if (cache !== null) return cache;
+  if (cache) return cache;
 
-  // First try IndexedDB
-  const cached = await loadFromIndexedDB();
-  if (cached.length > 0) {
-    cache = cached;
+  const local = await loadFromIndexedDB();
+  if (local?.length) {
+    cache = local;
     return cache;
   }
 
-  // Otherwise load from remote (or mock) and cache
-  const data = await getVaultEntries();
-  cache = data;
-  await saveToIndexedDB(data);
-  return data;
+  const remote = await getVaultEntries();
+  cache = remote || [];
+
+  await saveToIndexedDB(cache);
+  return cache;
 }
 
+// ===== ADD =====
 export async function addEntry(entry) {
-  const newEntry = await addVaultEntry(entry);
-  cache = cache ? [...cache, newEntry] : [newEntry];
+  const saved = await saveVaultEntry(entry);
+
+  cache = cache ? [...cache, saved] : [saved];
   await saveToIndexedDB(cache);
-  return newEntry;
+
+  return saved;
 }
 
-export async function updateEntry(id, updatedEntry) {
-  await updateVaultEntry(id, updatedEntry);
-  cache = cache.map(e => (e.id === id ? { ...e, ...updatedEntry } : e));
+// ===== UPDATE =====
+export async function updateEntry(id, entry) {
+  const saved = await saveVaultEntry({ ...entry, id });
+
+  cache = (cache || []).map(e => (e.id === id ? saved : e));
   await saveToIndexedDB(cache);
-  return updatedEntry;
+
+  return saved;
 }
 
+// ===== DELETE =====
 export async function deleteEntry(id) {
   await deleteVaultEntry(id);
-  cache = cache.filter(e => e.id !== id);
+
+  cache = (cache || []).filter(e => e.id !== id);
   await saveToIndexedDB(cache);
 }
 
-// Additional exports that might be needed by other components
+// ===== PUBLIC API =====
 export async function getEntries() {
-  return await loadVault();
+  return loadVault();
 }
 
 export async function saveEntries(entries) {
