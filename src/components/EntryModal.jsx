@@ -193,7 +193,7 @@ const styles = {
     zIndex: 100000,
   },
   modal: {
-    background: '#1F2937',
+    background: '#0f3d24',
     borderRadius: '16px',
     padding: '28px',
     width: '90%',
@@ -253,7 +253,7 @@ const styles = {
     padding: '10px 14px',
     borderRadius: '8px',
     border: '1px solid #374151',
-    background: '#111827',
+    background: '#0f3d24',
     color: '#F3F4F6',
     fontSize: '0.9rem',
     outline: 'none',
@@ -269,7 +269,7 @@ const styles = {
     padding: '10px 14px',
     borderRadius: '8px',
     border: '1px solid #374151',
-    background: '#111827',
+    background: '#0f3d24',
     color: '#F3F4F6',
     fontSize: '0.9rem',
     outline: 'none',
@@ -292,7 +292,7 @@ const styles = {
     padding: '10px 14px',
     borderRadius: '8px',
     border: '1px solid #374151',
-    background: '#111827',
+    background: '#0f3d24',
     color: '#F3F4F6',
     fontSize: '0.9rem',
     fontFamily: 'inherit',
@@ -322,7 +322,7 @@ const styles = {
   },
   saveBtn: {
     padding: '10px 24px',
-    background: '#10B981',
+    background: '#0f3d24',
     color: 'white',
     border: 'none',
     borderRadius: '8px',
@@ -337,10 +337,10 @@ const styles = {
 const styleSheet = document.createElement('style');
 styleSheet.textContent = `
   input:hover, textarea:hover {
-    border-color: #4caf50;
+    border-color: #0f3d24;
   }
   input:focus, textarea:focus {
-    border-color: #4caf50;
+    border-color: #0f3d24;
     box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
   }
   button:hover {
