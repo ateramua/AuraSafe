@@ -1,9 +1,57 @@
 // ===================== PRELOAD SCRIPT =====================
 const { contextBridge, ipcRenderer } = require('electron');
 
+// ===================== VAULT STATUS LISTENER (SINGLETON FOR APP LIFETIME) =====================
+// IMPORTANT: This listener is registered ONCE and lives for the entire app lifetime
+// DO NOT remove or re-register this listener
+let vaultListenerRegistered = false;
+let callbacks = new Set();
+
+function onVaultStatusChange(cb) {
+  if (!ipcRenderer) return;
+
+  // Add callback to the set
+  if (cb && typeof cb === 'function') {
+    callbacks.add(cb);
+    console.log('[Preload] Vault status callback registered. Total callbacks:', callbacks.size);
+  }
+
+  // Register the main IPC listener only ONCE for the entire app lifetime
+  if (vaultListenerRegistered) return;
+
+  vaultListenerRegistered = true;
+
+  console.log('[Preload] Registering unified vault status listener (global) - SINGLETON');
+
+  ipcRenderer.on('vault-status-change', (_, data) => {
+    console.log('[Preload] Received vault-status-change:', data);
+
+    // Dispatch custom event for DOM listeners
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('vault-status', { detail: data }));
+    }
+
+    // Call all registered callbacks
+    for (const fn of callbacks) {
+      try {
+        fn(data);
+      } catch (e) {
+        console.error('[Preload] Error in vault status callback:', e);
+      }
+    }
+  });
+}
+
+// Initialize the global listener (registers IPC listener ONCE)
+onVaultStatusChange();
+
+// Note: removeVaultStatusListener is intentionally NOT exposed to prevent
+// the React component lifecycle from breaking the singleton pattern.
+// DO NOT add a remove method here.
+
 // Create the API object that matches what api-client.js expects
 const api = {
-  // Vault CRUD
+  // ===================== VAULT CRUD =====================
   saveVaultEntry: async (entry) => {
     try {
       return await ipcRenderer.invoke('vault:saveEntry', entry);
@@ -31,7 +79,7 @@ const api = {
     }
   },
   
-  // Vault state
+  // ===================== VAULT STATE =====================
   isInitialized: async () => {
     try {
       const result = await ipcRenderer.invoke('vault:isInitialized');
@@ -42,25 +90,71 @@ const api = {
     }
   },
   
-  isUnlocked: async () => {
-    try {
-      const result = await ipcRenderer.invoke('vault:isUnlocked');
-      return result.unlocked;
-    } catch (error) {
-      console.error('[API] isUnlocked error:', error);
-      return false;
-    }
-  },
-  
+  // Primary unlock method - uses the unified handler
   unlockVault: async (password) => {
     try {
-      return await ipcRenderer.invoke('vault:unlock', password);
+      console.log('[API] unlockVault called');
+      return await ipcRenderer.invoke('unlock-vault', password);
     } catch (error) {
       console.error('[API] unlockVault error:', error);
       throw error;
     }
   },
   
+  // Primary isUnlocked check - uses the unified handler
+  isUnlocked: async () => {
+    try {
+      console.log('[API] isUnlocked called');
+      return await ipcRenderer.invoke('is-unlocked');
+    } catch (error) {
+      console.error('[API] isUnlocked error:', error);
+      return false;
+    }
+  },
+  
+  // Primary lock method - uses the unified handler
+  lockVault: async () => {
+    try {
+      console.log('[API] lockVault called');
+      return await ipcRenderer.invoke('lock-vault');
+    } catch (error) {
+      console.error('[API] lockVault error:', error);
+      return false;
+    }
+  },
+  
+  // Legacy unlock method (kept for backward compatibility)
+  unlockVaultLegacy: async (password) => {
+    try {
+      return await ipcRenderer.invoke('vault:unlock', password);
+    } catch (error) {
+      console.error('[API] unlockVaultLegacy error:', error);
+      throw error;
+    }
+  },
+  
+  // Legacy lock method
+  lockVaultLegacy: async () => {
+    try {
+      const result = await ipcRenderer.invoke('vault:lock');
+      return result.success;
+    } catch (error) {
+      console.error('[API] lockVaultLegacy error:', error);
+      throw error;
+    }
+  },
+  
+  // Legacy isUnlocked method
+  isUnlockedLegacy: async () => {
+    try {
+      const result = await ipcRenderer.invoke('vault:isUnlocked');
+      return result.unlocked;
+    } catch (error) {
+      console.error('[API] isUnlockedLegacy error:', error);
+      return false;
+    }
+  },
+
   initVault: async (password) => {
     try {
       const result = await ipcRenderer.invoke('vault:init', password);
@@ -71,17 +165,7 @@ const api = {
     }
   },
   
-  lockVault: async () => {
-    try {
-      const result = await ipcRenderer.invoke('vault:lock');
-      return result.success;
-    } catch (error) {
-      console.error('[API] lockVault error:', error);
-      throw error;
-    }
-  },
-  
-  // CHANGE PASSWORD - ADD THIS METHOD
+  // ===================== CHANGE PASSWORD =====================
   changePassword: async (currentPassword, newPassword) => {
     try {
       console.log('[API] changePassword called');
@@ -93,7 +177,35 @@ const api = {
     }
   },
   
-  // Biometric
+  // ===================== PASSKEY METHODS =====================
+  getPasskeys: async () => {
+    try {
+      return await ipcRenderer.invoke('passkey:getAll');
+    } catch (error) {
+      console.error('[API] getPasskeys error:', error);
+      return { success: false, data: [] };
+    }
+  },
+
+  savePasskey: async (passkeyData) => {
+    try {
+      return await ipcRenderer.invoke('passkey:save', passkeyData);
+    } catch (error) {
+      console.error('[API] savePasskey error:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  deletePasskey: async (id) => {
+    try {
+      return await ipcRenderer.invoke('passkey:delete', id);
+    } catch (error) {
+      console.error('[API] deletePasskey error:', error);
+      return { success: false, error: error.message };
+    }
+  },
+  
+  // ===================== BIOMETRIC =====================
   biometric: {
     isAvailable: async () => {
       try {
@@ -142,7 +254,7 @@ const api = {
     }
   },
   
-  // Sync with graceful error handling (feature coming soon)
+  // ===================== SYNC =====================
   sync: {
     push: async () => {
       try {
@@ -173,7 +285,7 @@ const api = {
     }
   },
   
-  // Settings
+  // ===================== SETTINGS =====================
   settings: {
     getAutoSync: async () => {
       try {
@@ -194,23 +306,30 @@ const api = {
     }
   },
   
-  // Vault status change listener
+  // ===================== VAULT STATUS LISTENERS =====================
+  // Register a callback for vault status changes
+  // IMPORTANT: This callback is ADDED to the global Set, NOT removed
+  // DO NOT call removeVaultStatusListener - it will break the singleton pattern
   onVaultStatusChange: (callback) => {
     if (typeof callback === 'function') {
-      ipcRenderer.on('vault:status-changed', (event, status) => {
-        callback(status);
-      });
+      // Add to the global callbacks Set
+      callbacks.add(callback);
+      console.log('[API] Vault status callback registered. Total callbacks:', callbacks.size);
     } else {
       console.error('[API] onVaultStatusChange: callback must be a function');
     }
   },
   
-  // Remove vault status listener
-  removeVaultStatusListener: (callback) => {
+  // Legacy status listener (for backward compatibility with existing code)
+  onVaultStatusChangeLegacy: (callback) => {
     if (typeof callback === 'function') {
-      ipcRenderer.removeListener('vault:status-changed', callback);
+      ipcRenderer.on('vault:status-changed', (event, status) => {
+        callback(status);
+      });
+    } else {
+      console.error('[API] onVaultStatusChangeLegacy: callback must be a function');
     }
-  }
+  },
 };
 
 // Expose the API to the renderer process
@@ -224,3 +343,4 @@ contextBridge.exposeInMainWorld('electron', {
 });
 
 console.log('[Preload] API exposed. Available methods:', Object.keys(api));
+console.log('[Preload] Vault status listener is SINGLETON - will persist for app lifetime');

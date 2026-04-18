@@ -176,6 +176,34 @@ export default function Vault() {
     }
   };
 
+  const handleUnlock = async (e) => {
+  e.preventDefault();
+  setLoading(true);
+  setUnlockError(null);
+
+  try {
+    const res = await api.unlockVault(masterPassword);
+
+    if (!res.success) {
+      setUnlockError('Incorrect password. Please try again.');
+      return;
+    }
+
+    // ✅ VERIFY GLOBAL STATE
+    const status = await api.isUnlocked();
+    console.log('[Vault] Global unlock status:', status);
+
+    setUnlocked(true);
+    setMasterPassword('');
+
+    await loadEntries();
+  } catch (err) {
+    setUnlockError('Failed to unlock vault.');
+  } finally {
+    setLoading(false);
+  }
+};
+
   const handleSaveEdit = async (updatedEntry) => {
     try {
       await api.saveVaultEntry(updatedEntry);

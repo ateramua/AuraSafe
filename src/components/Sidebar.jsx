@@ -1,8 +1,10 @@
+// src/components/Sidebar.jsx
 import { useRouter } from 'next/router';
 
 const categories = [
   { id: 'all', label: 'All Items', icon: '📁' },
   { id: 'passwords', label: 'Passwords', icon: '🔑' },
+  { id: 'passkeys', label: 'Passkeys', icon: '🔐' },  // NEW
   { id: 'addresses', label: 'Addresses', icon: '📍' },
   { id: 'paymentCards', label: 'Payment Cards', icon: '💳' },
   { id: 'bankAccounts', label: 'Bank Accounts', icon: '🏦' },
@@ -47,6 +49,7 @@ export default function Sidebar({ onOpenCategory }) {
             <span style={styles.navIcon}>{cat.icon}</span>
             <span style={styles.navLabel}>{cat.label}</span>
             {cat.id === 'help' && <span style={styles.helpBadge}>?</span>}
+            {cat.id === 'passkey' && <span style={styles.passkeyBadge}>NEW</span>}
           </div>
         ))}
       </nav>
@@ -132,6 +135,14 @@ const styles = {
     borderRadius: '20px',
     padding: '2px 8px',
     fontSize: '0.7rem',
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  passkeyBadge: {
+    background: '#3B82F6',
+    borderRadius: '20px',
+    padding: '2px 8px',
+    fontSize: '0.6rem',
     fontWeight: 'bold',
     color: '#fff',
   },

@@ -1,6 +1,5 @@
 // src/pages/settings.jsx
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
   isUnlocked,
@@ -13,309 +12,84 @@ import {
   disableBiometric,
   getAutoSync,
   setAutoSync,
+  changePassword,
 } from '../lib/api-client';
-import { loadVault } from '../lib/store';
-
-// Safe link that uses Next.js router if available, otherwise falls back to full page load
-function SafeLink({ href, children, className }) {
-  const router = useRouter();
-
-  const handleClick = (e) => {
-    e.preventDefault();
-    if (router && typeof router.push === 'function') {
-      router.push(href);
-    } else {
-      window.location.href = href;
-    }
-  };
-
-  return (
-    <a href={href} onClick={handleClick} className={className}>
-      {children}
-    </a>
-  );
-}
-
-// Enhanced Change Password Component with strength meter
-function ChangePassword({ api, onSuccess, onError }) {
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [passwordStrength, setPasswordStrength] = useState({ score: 0, label: '' });
-
-  // Password strength checker
-  const checkStrength = (password) => {
-    let score = 0;
-    let label = '';
-    
-    if (password.length >= 8) score++;
-    if (password.length >= 12) score++;
-    if (/[A-Z]/.test(password)) score++;
-    if (/[0-9]/.test(password)) score++;
-    if (/[^A-Za-z0-9]/.test(password)) score++;
-    
-    if (score <= 2) label = 'Weak';
-    else if (score <= 4) label = 'Moderate';
-    else label = 'Strong';
-    
-    setPasswordStrength({ score: Math.min(score * 20, 100), label });
-  };
-
-  const handleNewPasswordChange = (e) => {
-    const password = e.target.value;
-    setNewPassword(password);
-    if (password) {
-      checkStrength(password);
-    } else {
-      setPasswordStrength({ score: 0, label: '' });
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (newPassword !== confirmPassword) {
-      onError('New passwords do not match');
-      return;
-    }
-    
-    if (newPassword.length < 8) {
-      onError('New password must be at least 8 characters long');
-      return;
-    }
-    
-    setLoading(true);
-    
-    try {
-      // Call the dedicated changePassword API
-      const result = await api.changePassword(currentPassword, newPassword);
-      
-      if (result.success) {
-        onSuccess('Master password changed successfully! Please remember your new password. You will need to unlock again.');
-        
-        // Clear form
-        setCurrentPassword('');
-        setNewPassword('');
-        setConfirmPassword('');
-        setPasswordStrength({ score: 0, label: '' });
-        
-        // Lock the vault to force re-authentication with new password
-        setTimeout(async () => {
-          await api.lockVault();
-          window.location.href = '/vault';
-        }, 2000);
-        
-      } else {
-        onError(result.error || 'Failed to change password');
-      }
-      
-    } catch (err) {
-      onError('Failed to change password: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getStrengthColor = () => {
-    if (passwordStrength.score <= 33) return '#ef4444';
-    if (passwordStrength.score <= 66) return '#eab308';
-    return '#22c55e';
-  };
-
-  return (
-    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#C8E6C9' }}>
-          Current Master Password
-        </label>
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-          <input
-            type={showPassword ? 'text' : 'password'}
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            required
-            style={{ 
-              width: '100%', 
-              padding: '0.75rem', 
-              borderRadius: '0.5rem', 
-              border: '1px solid #4caf50', 
-              background: '#111827', 
-              color: '#F3F4F6' 
-            }}
-            autoComplete="current-password"
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword(!showPassword)}
-            style={{ 
-              position: 'absolute', 
-              right: '0.75rem', 
-              background: 'transparent', 
-              border: 'none', 
-              cursor: 'pointer', 
-              fontSize: '1.1rem' 
-            }}
-          >
-            {showPassword ? '👁️' : '👁️‍🗨️'}
-          </button>
-        </div>
-      </div>
-
-      <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#C8E6C9' }}>
-          New Master Password
-        </label>
-        <input
-          type="password"
-          value={newPassword}
-          onChange={handleNewPasswordChange}
-          required
-          style={{ 
-            width: '100%', 
-            padding: '0.75rem', 
-            borderRadius: '0.5rem', 
-            border: '1px solid #4caf50', 
-            background: '#111827', 
-            color: '#F3F4F6' 
-          }}
-          autoComplete="new-password"
-        />
-        {newPassword && (
-          <div style={{ marginTop: '0.5rem' }}>
-            <div style={{ 
-              height: '4px', 
-              background: '#2d3748', 
-              borderRadius: '2px', 
-              overflow: 'hidden' 
-            }}>
-              <div style={{ 
-                width: `${passwordStrength.score}%`, 
-                height: '100%', 
-                background: getStrengthColor(),
-                transition: 'width 0.3s ease'
-              }} />
-            </div>
-            <div style={{ 
-              fontSize: '0.7rem', 
-              color: getStrengthColor(), 
-              marginTop: '0.25rem' 
-            }}>
-              Password strength: {passwordStrength.label}
-            </div>
-          </div>
-        )}
-        <div style={{ fontSize: '0.7rem', color: '#9CA3AF', marginTop: '0.5rem' }}>
-          Minimum 8 characters. Use uppercase, numbers, and symbols for a stronger password.
-        </div>
-      </div>
-
-      <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#C8E6C9' }}>
-          Confirm New Password
-        </label>
-        <input
-          type="password"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          required
-          style={{ 
-            width: '100%', 
-            padding: '0.75rem', 
-            borderRadius: '0.5rem', 
-            border: newPassword && confirmPassword && newPassword !== confirmPassword 
-              ? '1px solid #ef4444' 
-              : '1px solid #4caf50',
-            background: '#111827', 
-            color: '#F3F4F6' 
-          }}
-          autoComplete="new-password"
-        />
-        {newPassword && confirmPassword && newPassword !== confirmPassword && (
-          <div style={{ fontSize: '0.7rem', color: '#ef4444', marginTop: '0.25rem' }}>
-            Passwords do not match
-          </div>
-        )}
-      </div>
-
-      <button 
-        type="submit" 
-        disabled={loading || (newPassword !== confirmPassword)}
-        style={{ 
-          padding: '0.75rem', 
-          background: '#2E7D32', 
-          color: 'white', 
-          border: 'none', 
-          borderRadius: '0.5rem', 
-          cursor: 'pointer', 
-          fontSize: '1rem', 
-          fontWeight: '500',
-          opacity: loading || (newPassword !== confirmPassword) ? 0.6 : 1,
-          transition: 'all 0.2s ease'
-        }}
-      >
-        {loading ? 'Changing Password...' : 'Change Master Password'}
-      </button>
-      
-      <div style={{ 
-        fontSize: '0.75rem', 
-        color: '#9CA3AF', 
-        textAlign: 'center', 
-        marginTop: '0.5rem' 
-      }}>
-        This will re-encrypt all your vault entries with the new password.
-      </div>
-    </form>
-  );
-}
+import { loadVault, getVaultStats, clearLocalData } from '../lib/store';
 
 export default function SettingsPage() {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
   const [entries, setEntries] = useState([]);
-  const [unlocked, setUnlocked] = useState(false);
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [api, setApi] = useState(null);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
+  // Settings states
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+  const [autoLock, setAutoLock] = useState(5);
   const [syncCID, setSyncCID] = useState('');
   const [syncMessage, setSyncMessage] = useState('');
   const [syncLoading, setSyncLoading] = useState(false);
-  
-  // Password change message
-  const [passwordMessage, setPasswordMessage] = useState({ type: '', text: '' });
+  const [lastBackup, setLastBackup] = useState(null);
 
-  // Derived metrics for the dashboard
+  // Metrics
   const [securityScore, setSecurityScore] = useState(0);
   const [strongPasswords, setStrongPasswords] = useState(0);
+  const [weakPasswords, setWeakPasswords] = useState(0);
+  const [reusedPasswords, setReusedPasswords] = useState(0);
+  const [totalSize, setTotalSize] = useState(0);
 
+  const showToast = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 4000);
+  };
+
+  // Load settings from storage
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.api) {
-      setApi(window.api);
+    const savedDarkMode = localStorage.getItem('aurasafe_dark_mode');
+    if (savedDarkMode !== null) {
+      setDarkMode(savedDarkMode === 'true');
+      if (savedDarkMode === 'true') {
+        document.body.classList.add('dark-mode');
+      }
     }
+    const savedAutoLock = localStorage.getItem('aurasafe_auto_lock');
+    if (savedAutoLock) setAutoLock(parseInt(savedAutoLock));
   }, []);
 
+  // ================= INIT =================
   useEffect(() => {
+    setMounted(true);
+
     const init = async () => {
-      if (!api) return;
-      
-      const unlockedStatus = await isUnlocked();
-      setUnlocked(unlockedStatus);
-
-      if (unlockedStatus) {
-        const vaultData = await loadVault();
-        let entriesArray = [];
-        if (Array.isArray(vaultData)) {
-          entriesArray = vaultData;
-        } else if (vaultData && typeof vaultData === 'object' && Array.isArray(vaultData.entries)) {
-          entriesArray = vaultData.entries;
-        }
-        setEntries(entriesArray);
-      }
-
       try {
+        const vaultData = await loadVault();
+        const entriesArray = Array.isArray(vaultData) ? vaultData : vaultData?.entries || [];
+        setEntries(entriesArray);
+
+        // Calculate detailed metrics
+        const passwords = entriesArray.filter(e => e.password).map(e => e.password);
+        const strong = passwords.filter(p => p && p.length >= 12 && /[A-Z]/.test(p) && /[0-9]/.test(p) && /[^A-Za-z0-9]/.test(p)).length;
+        const weak = passwords.filter(p => p && p.length < 8).length;
+        const unique = new Set(passwords).size;
+        const reused = passwords.length - unique;
+
+        setStrongPasswords(strong);
+        setWeakPasswords(weak);
+        setReusedPasswords(reused);
+        setSecurityScore(Math.round((strong / (passwords.length || 1)) * 100));
+        setTotalSize(JSON.stringify(entriesArray).length);
+
+        const vaultStats = await getVaultStats();
+        setStats(vaultStats);
+
         const available = await isBiometricAvailable();
         setBiometricAvailable(available);
         if (available) {
@@ -328,63 +102,59 @@ export default function SettingsPage() {
 
         const cid = await getSyncCID();
         if (cid) setSyncCID(cid);
+
+        // Check last backup
+        const lastBackupTime = localStorage.getItem('aurasafe_last_backup');
+        if (lastBackupTime) setLastBackup(parseInt(lastBackupTime));
       } catch (err) {
-        console.error('Failed to load settings', err);
+        console.error('[Settings] Init failed:', err);
       } finally {
         setLoading(false);
       }
     };
-    init();
-  }, [api]);
 
-  // Compute security metrics when entries change
+    init();
+  }, []);
+
+  // ================= METRICS =================
   useEffect(() => {
     if (!entries.length) {
       setSecurityScore(0);
       setStrongPasswords(0);
+      setWeakPasswords(0);
+      setReusedPasswords(0);
       return;
     }
-    const strong = entries.filter(e => e.password && e.password.length >= 8).length;
+    const passwords = entries.filter(e => e.password).map(e => e.password);
+    const strong = passwords.filter(p => p && p.length >= 12 && /[A-Z]/.test(p) && /[0-9]/.test(p) && /[^A-Za-z0-9]/.test(p)).length;
+    const weak = passwords.filter(p => p && p.length < 8).length;
+    const unique = new Set(passwords).size;
+    const reused = passwords.length - unique;
+
     setStrongPasswords(strong);
-    const score = Math.round((strong / entries.length) * 100);
-    setSecurityScore(score);
+    setWeakPasswords(weak);
+    setReusedPasswords(reused);
+    setSecurityScore(Math.round((strong / (passwords.length || 1)) * 100));
   }, [entries]);
 
-  const showPasswordMessage = (text, type = 'success') => {
-    setPasswordMessage({ type, text });
-    setTimeout(() => setPasswordMessage({ type: '', text: '' }), 5000);
-  };
-
-  if (loading) return <div className="loading-spinner">Loading settings...</div>;
-
-  if (!unlocked) {
-    return (
-      <div className="auth-container">
-        <div className="auth-card">
-          <h2>Vault Locked</h2>
-          <p>Please unlock your vault to view security settings and insights.</p>
-          <SafeLink href="/vault" className="back-button">
-            ← Go to Vault
-          </SafeLink>
-        </div>
-      </div>
-    );
-  }
-
+  // ================= ACTIONS =================
   const handleBiometricToggle = async () => {
-    setSyncMessage('');
     try {
       if (biometricEnabled) {
         const success = await disableBiometric();
-        if (success) setBiometricEnabled(false);
-        else setSyncMessage('Failed to disable biometric unlock');
+        if (success) {
+          setBiometricEnabled(false);
+          showToast('Biometric unlock disabled', 'success');
+        } else showToast('Failed to disable biometric unlock', 'error');
       } else {
         const success = await enableBiometric();
-        if (success) setBiometricEnabled(true);
-        else setSyncMessage('Failed to enable biometric unlock. Ensure Touch ID is set up.');
+        if (success) {
+          setBiometricEnabled(true);
+          showToast('Biometric unlock enabled', 'success');
+        } else showToast('Failed to enable biometric unlock', 'error');
       }
-    } catch (err) {
-      setSyncMessage('An error occurred');
+    } catch {
+      showToast('An error occurred', 'error');
     }
   };
 
@@ -393,9 +163,29 @@ export default function SettingsPage() {
       const newValue = !autoSyncEnabled;
       await setAutoSync(newValue);
       setAutoSyncEnabled(newValue);
+      showToast(`Auto-sync ${newValue ? 'enabled' : 'disabled'}`, 'success');
     } catch (err) {
-      console.error('Failed to update auto-sync', err);
+      showToast('Failed to update auto-sync', 'error');
     }
+  };
+
+  const handleDarkModeToggle = () => {
+    const newValue = !darkMode;
+    setDarkMode(newValue);
+    localStorage.setItem('aurasafe_dark_mode', newValue);
+    if (newValue) {
+      document.body.classList.add('dark-mode');
+    } else {
+      document.body.classList.remove('dark-mode');
+    }
+    showToast(`Dark mode ${newValue ? 'enabled' : 'disabled'}`, 'success');
+  };
+
+  const handleAutoLockChange = (e) => {
+    const value = parseInt(e.target.value);
+    setAutoLock(value);
+    localStorage.setItem('aurasafe_auto_lock', value);
+    showToast(`Auto-lock set to ${value} minutes`, 'success');
   };
 
   const handlePush = async () => {
@@ -405,9 +195,11 @@ export default function SettingsPage() {
       const result = await syncPush();
       if (result.success) {
         setSyncCID(result.cid);
-        setSyncMessage(`✅ Pushed successfully. CID: ${result.cid}`);
+        setSyncMessage(`✅ Pushed successfully`);
+        showToast('Vault pushed to IPFS', 'success');
       } else {
         setSyncMessage(`❌ Push failed: ${result.error}`);
+        showToast('Push failed', 'error');
       }
     } catch (err) {
       setSyncMessage(`❌ Push error: ${err.message}`);
@@ -422,9 +214,13 @@ export default function SettingsPage() {
     try {
       const result = await syncPull();
       if (result.success) {
-        setSyncMessage('✅ Pull successful. Vault updated.');
+        setSyncMessage('✅ Pull successful');
+        showToast('Vault pulled from IPFS', 'success');
+        const vaultData = await loadVault();
+        setEntries(Array.isArray(vaultData) ? vaultData : vaultData?.entries || []);
       } else {
         setSyncMessage(`❌ Pull failed: ${result.error}`);
+        showToast('Pull failed', 'error');
       }
     } catch (err) {
       setSyncMessage(`❌ Pull error: ${err.message}`);
@@ -433,510 +229,863 @@ export default function SettingsPage() {
     }
   };
 
-  return (
-    <>
-      <style jsx>{`
-        * {
-          box-sizing: border-box;
-        }
+  const handleExport = async () => {
+    try {
+      const data = await loadVault();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `aurasafe_backup_${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      localStorage.setItem('aurasafe_last_backup', Date.now().toString());
+      setLastBackup(Date.now());
+      showToast('Vault exported successfully', 'success');
+      setShowExportModal(false);
+    } catch (err) {
+      showToast('Failed to export vault', 'error');
+    }
+  };
 
-        .settings-container {
-          min-height: 100vh;
-          background: linear-gradient(135deg, #0a2a0a 0%, #0f3a0f 100%);
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          padding: 2rem;
-          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-        }
+  const handleImport = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
 
-        .settings-card {
-          max-width: 1000px;
-          width: 100%;
-          background: rgba(20, 40, 20, 0.7);
-          backdrop-filter: blur(12px);
-          border-radius: 2rem;
-          padding: 2rem;
-          box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(76, 175, 80, 0.3);
-          transition: transform 0.2s ease, box-shadow 0.2s ease;
-        }
+    try {
+      const text = await file.text();
+      const importedData = JSON.parse(text);
+      const entries = Array.isArray(importedData) ? importedData : importedData.entries || [];
+      
+      for (const entry of entries) {
+        await window.api.saveVaultEntry(entry);
+      }
+      
+      showToast(`Imported ${entries.length} entries successfully`, 'success');
+      const vaultData = await loadVault();
+      setEntries(Array.isArray(vaultData) ? vaultData : vaultData?.entries || []);
+    } catch (err) {
+      showToast('Failed to import vault', 'error');
+    }
+  };
 
-        .settings-card:hover {
-          box-shadow: 0 25px 40px -12px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(76, 175, 80, 0.5);
-          transform: translateY(-2px);
-        }
+  const handleClearData = async () => {
+    try {
+      await clearLocalData();
+      showToast('Local data cleared successfully', 'success');
+      setShowConfirmModal(false);
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (err) {
+      showToast('Failed to clear data', 'error');
+    }
+  };
 
-        .security-header {
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-          margin-bottom: 2rem;
-          flex-wrap: wrap;
-        }
+  const handleLock = async () => {
+    if (window.api) {
+      await window.api.lockVault();
+      router.push('/vault');
+    }
+  };
 
-        .back-button {
-          background: rgba(255, 255, 255, 0.1);
-          border: 1px solid rgba(76, 175, 80, 0.5);
-          color: #fff;
-          padding: 0.5rem 1rem;
-          border-radius: 2rem;
-          cursor: pointer;
-          font-size: 0.9rem;
-          transition: all 0.2s ease;
-          font-weight: 500;
-          text-decoration: none;
-          display: inline-block;
-        }
+  // Password Change Modal Component
+  const ChangePasswordModal = ({ isOpen, onClose }) => {
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [showCurrent, setShowCurrent] = useState(false);
+    const [showNew, setShowNew] = useState(false);
+    const [strength, setStrength] = useState({ score: 0, label: '', color: '#ef4444' });
 
-        .back-button:hover {
-          background: rgba(76, 175, 80, 0.2);
-          transform: translateX(-2px);
-        }
+    const checkStrength = (password) => {
+      let score = 0;
+      if (password.length >= 8) score++;
+      if (password.length >= 12) score++;
+      if (/[A-Z]/.test(password)) score++;
+      if (/[0-9]/.test(password)) score++;
+      if (/[^A-Za-z0-9]/.test(password)) score++;
+      
+      const percent = Math.min(score * 20, 100);
+      let label = 'Weak';
+      let color = '#ef4444';
+      if (percent > 60) { label = 'Good'; color = '#eab308'; }
+      if (percent > 80) { label = 'Strong'; color = '#22c55e'; }
+      setStrength({ score: percent, label, color });
+    };
 
-        h1 {
-          font-size: 1.8rem;
-          font-weight: 700;
-          background: linear-gradient(120deg, #fff, #a5d6a5);
-          background-clip: text;
-          -webkit-background-clip: text;
-          color: transparent;
-          margin: 0;
+    const handleSubmit = async (e) => {
+      e.preventDefault();
+      if (newPassword !== confirmPassword) {
+        showToast('Passwords do not match', 'error');
+        return;
+      }
+      if (newPassword.length < 8) {
+        showToast('Password must be at least 8 characters', 'error');
+        return;
+      }
+      setLoading(true);
+      try {
+        const result = await changePassword(currentPassword, newPassword);
+        if (result.success) {
+          showToast('Password changed successfully!', 'success');
+          onClose();
+          setCurrentPassword('');
+          setNewPassword('');
+          setConfirmPassword('');
+        } else {
+          showToast(result.error || 'Failed to change password', 'error');
         }
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        setLoading(false);
+      }
+    };
 
-        h3 {
-          font-size: 1.2rem;
-          margin: 0;
-          color: #eef5ff;
-        }
+    if (!isOpen) return null;
 
-        .dashboard-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-          gap: 1.5rem;
-          margin-bottom: 2rem;
-        }
-
-        .metric-card {
-          background: rgba(30, 50, 30, 0.6);
-          backdrop-filter: blur(4px);
-          border-radius: 1rem;
-          padding: 1.25rem;
-          text-align: center;
-          border: 1px solid rgba(76, 175, 80, 0.3);
-          transition: transform 0.2s ease;
-        }
-
-        .metric-card:hover {
-          transform: translateY(-4px);
-          border-color: rgba(76, 175, 80, 0.6);
-        }
-
-        .metric-icon {
-          font-size: 2rem;
-          margin-bottom: 0.5rem;
-        }
-
-        .metric-value {
-          font-size: 2rem;
-          font-weight: bold;
-          color: #fff;
-          margin: 0.5rem 0;
-        }
-
-        .metric-label {
-          font-size: 0.85rem;
-          color: #c8e6c9;
-          text-transform: uppercase;
-          letter-spacing: 1px;
-        }
-
-        .progress-bar {
-          height: 6px;
-          background: rgba(255, 255, 255, 0.2);
-          border-radius: 3px;
-          margin-top: 0.75rem;
-          overflow: hidden;
-        }
-
-        .progress-fill {
-          height: 100%;
-          background: #4caf50;
-          border-radius: 3px;
-          transition: width 0.3s ease;
-        }
-
-        .settings-divider {
-          border: none;
-          height: 1px;
-          background: linear-gradient(90deg, transparent, rgba(76, 175, 80, 0.4), transparent);
-          margin: 1.5rem 0;
-        }
-
-        .setting-section {
-          margin-bottom: 2rem;
-        }
-
-        .setting-header {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          margin-bottom: 0.5rem;
-        }
-
-        .setting-icon {
-          font-size: 1.6rem;
-          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
-        }
-
-        .setting-description {
-          color: #c8e6c9;
-          font-size: 0.9rem;
-          margin-bottom: 1rem;
-          line-height: 1.4;
-        }
-
-        .setting-control {
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-        }
-
-        .setting-status {
-          font-size: 0.9rem;
-          font-weight: 500;
-          color: #a5d6a5;
-          background: rgba(76, 175, 80, 0.2);
-          padding: 0.2rem 0.6rem;
-          border-radius: 1rem;
-        }
-
-        .toggle-switch {
-          position: relative;
-          display: inline-block;
-          width: 52px;
-          height: 28px;
-        }
-
-        .toggle-switch input {
-          opacity: 0;
-          width: 0;
-          height: 0;
-        }
-
-        .toggle-slider {
-          position: absolute;
-          cursor: pointer;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background-color: #2c3a2c;
-          transition: 0.3s;
-          border-radius: 34px;
-          box-shadow: inset 0 1px 2px rgba(0,0,0,0.2);
-        }
-
-        .toggle-slider:before {
-          position: absolute;
-          content: "";
-          height: 22px;
-          width: 22px;
-          left: 3px;
-          bottom: 3px;
-          background-color: white;
-          transition: 0.3s;
-          border-radius: 50%;
-        }
-
-        input:checked + .toggle-slider {
-          background: linear-gradient(145deg, #2e7d32, #1b5e20);
-        }
-
-        input:checked + .toggle-slider:before {
-          transform: translateX(24px);
-        }
-
-        .sync-buttons {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 1rem;
-          margin: 1rem 0 1rem 0;
-        }
-
-        .sync-button {
-          padding: 0.7rem 1.5rem;
-          border-radius: 2rem;
-          font-weight: 600;
-          border: none;
-          cursor: pointer;
-          transition: all 0.2s ease;
-          font-size: 0.9rem;
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
-          background: rgba(255, 255, 255, 0.08);
-          backdrop-filter: blur(4px);
-          color: #fff;
-          border: 1px solid rgba(76, 175, 80, 0.3);
-        }
-
-        .sync-button:hover:not(:disabled) {
-          transform: translateY(-2px);
-          filter: brightness(1.1);
-          border-color: #4caf50;
-        }
-
-        .sync-button:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        .push-button {
-          background: linear-gradient(135deg, #1e3a1e, #2b5e2b);
-          box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
-        }
-
-        .pull-button {
-          background: linear-gradient(135deg, #1e3a1e, #2b5e2b);
-          box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        }
-
-        .sync-cid {
-          background: rgba(0, 0, 0, 0.4);
-          padding: 0.5rem 1rem;
-          border-radius: 1rem;
-          font-size: 0.8rem;
-          font-family: monospace;
-          margin-top: 1rem;
-          word-break: break-all;
-          color: #c8e6c9;
-        }
-
-        .sync-message {
-          margin-top: 1rem;
-          padding: 0.6rem 1rem;
-          border-radius: 1rem;
-          font-size: 0.85rem;
-          background: rgba(0, 0, 0, 0.3);
-          border-left: 3px solid;
-        }
-
-        .sync-message.success {
-          border-left-color: #4caf50;
-          color: #c8e6c9;
-        }
-        .sync-message.error {
-          border-left-color: #ef4444;
-          color: #ffbfbf;
-        }
-        .sync-message.info {
-          border-left-color: #3b82f6;
-          color: #c7e2ff;
-        }
-
-        .password-message {
-          margin-bottom: 1rem;
-          padding: 0.75rem;
-          border-radius: 0.5rem;
-          text-align: center;
-        }
-        .password-message.success {
-          background: #2E7D32;
-          color: white;
-        }
-        .password-message.error {
-          background: #dc3545;
-          color: white;
-        }
-
-        .auth-container {
-          min-height: 100vh;
-          background: linear-gradient(135deg, #0a2a0a 0%, #0f3a0f 100%);
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          padding: 2rem;
-        }
-
-        .auth-card {
-          background: rgba(20, 40, 20, 0.8);
-          backdrop-filter: blur(12px);
-          border-radius: 2rem;
-          padding: 2.5rem;
-          text-align: center;
-          max-width: 400px;
-          width: 100%;
-          box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.4);
-          border: 1px solid rgba(76, 175, 80, 0.3);
-        }
-
-        .auth-card h2 {
-          color: #e8f5e9;
-        }
-
-        .auth-card p {
-          color: #c8e6c9;
-        }
-
-        .loading-spinner {
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          min-height: 100vh;
-          background: linear-gradient(135deg, #0a2a0a 0%, #0f3a0f 100%);
-          color: #c8e6c9;
-          font-size: 1.2rem;
-        }
-      `}</style>
-
-      <div className="settings-container">
-        <div className="settings-card">
-          <div className="security-header">
-            <SafeLink href="/vault" className="back-button">
-              ← Back to Vault
-            </SafeLink>
-            <h1>Security Dashboard & Settings</h1>
+    return (
+      <div style={styles.modalOverlay} onClick={onClose}>
+        <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
+          <div style={styles.modalHeader}>
+            <h3>Change Master Password</h3>
+            <button onClick={onClose} style={styles.modalClose}>×</button>
           </div>
-
-          {/* Password Change Message */}
-          {passwordMessage.text && (
-            <div className={`password-message ${passwordMessage.type}`}>
-              {passwordMessage.text}
-            </div>
-          )}
-
-          {/* Modern Dashboard Metrics */}
-          <div className="dashboard-grid">
-            <div className="metric-card">
-              <div className="metric-icon">🔐</div>
-              <div className="metric-value">{entries.length}</div>
-              <div className="metric-label">Total Entries</div>
-            </div>
-            <div className="metric-card">
-              <div className="metric-icon">🛡️</div>
-              <div className="metric-value">{securityScore}%</div>
-              <div className="metric-label">Security Score</div>
-              <div className="progress-bar">
-                <div className="progress-fill" style={{ width: `${securityScore}%` }} />
+          <form onSubmit={handleSubmit}>
+            <div style={styles.formGroup}>
+              <label>Current Password</label>
+              <div style={styles.passwordWrapper}>
+                <input
+                  type={showCurrent ? 'text' : 'password'}
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  required
+                  style={styles.formInput}
+                />
+                <button type="button" onClick={() => setShowCurrent(!showCurrent)} style={styles.eyeButton}>
+                  {showCurrent ? '👁️' : '👁️‍🗨️'}
+                </button>
               </div>
             </div>
-            <div className="metric-card">
-              <div className="metric-icon">💪</div>
-              <div className="metric-value">{strongPasswords}</div>
-              <div className="metric-label">Strong Passwords</div>
-            </div>
-            <div className="metric-card">
-              <div className="metric-icon">🔁</div>
-              <div className="metric-value">{syncCID ? 'Active' : 'Off'}</div>
-              <div className="metric-label">IPFS Sync</div>
-              {syncCID && (
-                <div style={{ fontSize: '0.7rem', marginTop: '0.5rem', color: '#a5d6a5' }}>
-                  {syncCID.slice(0, 12)}…
+            <div style={styles.formGroup}>
+              <label>New Password</label>
+              <div style={styles.passwordWrapper}>
+                <input
+                  type={showNew ? 'text' : 'password'}
+                  value={newPassword}
+                  onChange={(e) => { setNewPassword(e.target.value); checkStrength(e.target.value); }}
+                  required
+                  style={styles.formInput}
+                />
+                <button type="button" onClick={() => setShowNew(!showNew)} style={styles.eyeButton}>
+                  {showNew ? '👁️' : '👁️‍🗨️'}
+                </button>
+              </div>
+              {newPassword && (
+                <div style={styles.strengthBar}>
+                  <div style={{ width: `${strength.score}%`, background: strength.color, height: '4px', borderRadius: '2px', transition: 'width 0.3s' }} />
+                  <span style={{ color: strength.color, fontSize: '11px' }}>{strength.label}</span>
                 </div>
               )}
             </div>
-          </div>
-
-          <hr className="settings-divider" />
-
-          {/* Change Master Password Section */}
-          <div className="setting-section">
-            <div className="setting-header">
-              <span className="setting-icon">🔑</span>
-              <h3>Change Master Password</h3>
-            </div>
-            <p className="setting-description">
-              Update your master password to enhance security. Your vault will be re-encrypted with the new password.
-            </p>
-            {api && (
-              <ChangePassword 
-                api={api} 
-                onSuccess={(msg) => showPasswordMessage(msg, 'success')}
-                onError={(msg) => showPasswordMessage(msg, 'error')}
+            <div style={styles.formGroup}>
+              <label>Confirm Password</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                style={styles.formInput}
               />
-            )}
-          </div>
-
-          <hr className="settings-divider" />
-
-          {/* Biometric Section */}
-          <div className="setting-section">
-            <div className="setting-header">
-              <span className="setting-icon">🔐</span>
-              <h3>Biometric Unlock</h3>
             </div>
-            <p className="setting-description">
-              {biometricAvailable
-                ? 'Use your fingerprint or face to quickly unlock the vault.'
-                : 'Biometric authentication is not available on this device.'}
-            </p>
-            {biometricAvailable && (
-              <div className="setting-control">
-                <label className="toggle-switch">
-                  <input type="checkbox" checked={biometricEnabled} onChange={handleBiometricToggle} />
-                  <span className="toggle-slider"></span>
-                </label>
-                <span className="setting-status">{biometricEnabled ? 'Enabled' : 'Disabled'}</span>
-              </div>
-            )}
-          </div>
-
-          <hr className="settings-divider" />
-
-          {/* Auto-sync Section */}
-          <div className="setting-section">
-            <div className="setting-header">
-              <span className="setting-icon">🔁</span>
-              <h3>Auto-sync</h3>
-            </div>
-            <p className="setting-description">
-              Automatically push changes to IPFS after modifying the vault.
-            </p>
-            <div className="setting-control">
-              <label className="toggle-switch">
-                <input type="checkbox" checked={autoSyncEnabled} onChange={handleAutoSyncToggle} />
-                <span className="toggle-slider"></span>
-              </label>
-              <span className="setting-status">{autoSyncEnabled ? 'Enabled' : 'Disabled'}</span>
-            </div>
-          </div>
-
-          <hr className="settings-divider" />
-
-          {/* IPFS Sync Section */}
-          <div className="setting-section">
-            <div className="setting-header">
-              <span className="setting-icon">🔄</span>
-              <h3>IPFS Sync</h3>
-            </div>
-            <p className="setting-description">
-              Push your encrypted vault to IPFS to share across devices, or pull a previously uploaded vault.
-            </p>
-            <div className="sync-buttons">
-              <button onClick={handlePush} disabled={syncLoading} className="sync-button push-button">
-                {syncLoading ? 'Pushing...' : '📤 Push to IPFS'}
-              </button>
-              <button onClick={handlePull} disabled={syncLoading} className="sync-button pull-button">
-                {syncLoading ? 'Pulling...' : '📥 Pull from IPFS'}
+            <div style={styles.modalActions}>
+              <button type="button" onClick={onClose} style={styles.cancelBtn}>Cancel</button>
+              <button type="submit" disabled={loading} style={styles.saveBtn}>
+                {loading ? 'Changing...' : 'Change Password'}
               </button>
             </div>
-            {syncCID && (
-              <div className="sync-cid">
-                <strong>Current CID:</strong> <code>{syncCID}</code>
-              </div>
-            )}
-            {syncMessage && (
-              <div
-                className={`sync-message ${
-                  syncMessage.includes('✅') ? 'success' : syncMessage.includes('❌') ? 'error' : 'info'
-                }`}
-              >
-                {syncMessage}
-              </div>
-            )}
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  // Export Modal
+  const ExportModal = ({ isOpen, onClose }) => {
+    if (!isOpen) return null;
+    return (
+      <div style={styles.modalOverlay} onClick={onClose}>
+        <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
+          <div style={styles.modalHeader}>
+            <h3>Export Vault</h3>
+            <button onClick={onClose} style={styles.modalClose}>×</button>
+          </div>
+          <p>This will export all your vault entries as a JSON file.</p>
+          <p style={{ fontSize: '12px', color: '#f59e0b' }}>⚠️ Keep this file secure. It contains all your passwords in plain text.</p>
+          <div style={styles.modalActions}>
+            <button type="button" onClick={onClose} style={styles.cancelBtn}>Cancel</button>
+            <button type="button" onClick={handleExport} style={styles.saveBtn}>Export Vault</button>
           </div>
         </div>
       </div>
+    );
+  };
+
+  // Confirm Modal
+  const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message }) => {
+    if (!isOpen) return null;
+    return (
+      <div style={styles.modalOverlay} onClick={onClose}>
+        <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
+          <div style={styles.modalHeader}>
+            <h3>{title}</h3>
+            <button onClick={onClose} style={styles.modalClose}>×</button>
+          </div>
+          <p>{message}</p>
+          <div style={styles.modalActions}>
+            <button type="button" onClick={onClose} style={styles.cancelBtn}>Cancel</button>
+            <button type="button" onClick={onConfirm} style={{ ...styles.saveBtn, background: '#dc3545' }}>Confirm</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ================= SSR GUARD =================
+  if (!mounted) return null;
+
+  if (loading) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.loadingCard}>
+          <div style={styles.spinner}></div>
+          <p>Loading settings...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ================= MAIN UI =================
+  return (
+    <>
+      <div style={styles.container}>
+        <div style={styles.card}>
+          {/* Header */}
+          <div style={styles.header}>
+            <div style={styles.headerLeft}>
+              <button onClick={() => router.push('/vault')} style={styles.backButton}>
+                ← Back to Vault
+              </button>
+              <h1 style={styles.title}>Settings</h1>
+            </div>
+            <div style={styles.headerRight}>
+              <span style={styles.version}>v1.0.0</span>
+            </div>
+          </div>
+
+          {/* Toast Notification */}
+          {toast.show && (
+            <div style={{ ...styles.toast, ...(toast.type === 'error' ? styles.toastError : styles.toastSuccess) }}>
+              {toast.message}
+            </div>
+          )}
+
+          {/* Security Dashboard */}
+          <div style={styles.dashboard}>
+            <h2 style={styles.dashboardTitle}>Security Dashboard</h2>
+            <div style={styles.dashboardGrid}>
+              <div style={styles.metricCard}>
+                <div style={styles.metricIcon}>🔐</div>
+                <div style={styles.metricValue}>{entries.length}</div>
+                <div style={styles.metricLabel}>Total Entries</div>
+              </div>
+              <div style={styles.metricCard}>
+                <div style={styles.metricIcon}>🛡️</div>
+                <div style={styles.metricValue}>{securityScore}%</div>
+                <div style={styles.metricLabel}>Security Score</div>
+                <div style={styles.progressBar}>
+                  <div style={{ ...styles.progressFill, width: `${securityScore}%` }} />
+                </div>
+              </div>
+              <div style={styles.metricCard}>
+                <div style={styles.metricIcon}>💪</div>
+                <div style={styles.metricValue}>{strongPasswords}</div>
+                <div style={styles.metricLabel}>Strong Passwords</div>
+              </div>
+              <div style={styles.metricCard}>
+                <div style={styles.metricIcon}>⚠️</div>
+                <div style={styles.metricValue}>{weakPasswords}</div>
+                <div style={styles.metricLabel}>Weak Passwords</div>
+              </div>
+              <div style={styles.metricCard}>
+                <div style={styles.metricIcon}>🔄</div>
+                <div style={styles.metricValue}>{reusedPasswords}</div>
+                <div style={styles.metricLabel}>Reused Passwords</div>
+              </div>
+              <div style={styles.metricCard}>
+                <div style={styles.metricIcon}>☁️</div>
+                <div style={styles.metricValue}>{syncCID ? 'Active' : 'Off'}</div>
+                <div style={styles.metricLabel}>IPFS Sync</div>
+                {syncCID && <div style={styles.cidPreview}>{syncCID.slice(0, 12)}…</div>}
+              </div>
+            </div>
+          </div>
+
+          {/* Security Section */}
+          <div style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <span style={styles.sectionIcon}>🔑</span>
+              <h3>Security</h3>
+            </div>
+            <div style={styles.sectionContent}>
+              <button onClick={() => setShowPasswordModal(true)} style={styles.primaryButton}>
+                Change Master Password
+              </button>
+              <button onClick={handleLock} style={styles.dangerButton}>
+                Lock Vault
+              </button>
+            </div>
+          </div>
+
+          {/* Biometric Section */}
+          {biometricAvailable && (
+            <div style={styles.section}>
+              <div style={styles.sectionHeader}>
+                <span style={styles.sectionIcon}>🔐</span>
+                <h3>Biometric Unlock</h3>
+              </div>
+              <div style={styles.sectionContent}>
+                <label style={styles.toggle}>
+                  <input type="checkbox" checked={biometricEnabled} onChange={handleBiometricToggle} />
+                  <span style={styles.toggleSlider}></span>
+                  <span style={styles.toggleLabel}>Use fingerprint / face ID</span>
+                </label>
+              </div>
+            </div>
+          )}
+
+          {/* Sync Section */}
+          <div style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <span style={styles.sectionIcon}>🔄</span>
+              <h3>Sync</h3>
+            </div>
+            <div style={styles.sectionContent}>
+              <label style={styles.toggle}>
+                <input type="checkbox" checked={autoSyncEnabled} onChange={handleAutoSyncToggle} />
+                <span style={styles.toggleSlider}></span>
+                <span style={styles.toggleLabel}>Auto-sync to IPFS</span>
+              </label>
+              <div style={styles.buttonGroup}>
+                <button onClick={handlePush} disabled={syncLoading} style={styles.secondaryButton}>
+                  {syncLoading ? 'Pushing...' : '📤 Push to IPFS'}
+                </button>
+                <button onClick={handlePull} disabled={syncLoading} style={styles.secondaryButton}>
+                  {syncLoading ? 'Pulling...' : '📥 Pull from IPFS'}
+                </button>
+              </div>
+              {syncMessage && <div style={styles.syncMessage}>{syncMessage}</div>}
+            </div>
+          </div>
+
+          {/* Preferences Section */}
+          <div style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <span style={styles.sectionIcon}>⚙️</span>
+              <h3>Preferences</h3>
+            </div>
+            <div style={styles.sectionContent}>
+              <label style={styles.toggle}>
+                <input type="checkbox" checked={darkMode} onChange={handleDarkModeToggle} />
+                <span style={styles.toggleSlider}></span>
+                <span style={styles.toggleLabel}>Dark Mode</span>
+              </label>
+              <div style={styles.settingRow}>
+                <span>Auto-lock after inactivity</span>
+                <select value={autoLock} onChange={handleAutoLockChange} style={styles.select}>
+                  <option value={1}>1 minute</option>
+                  <option value={5}>5 minutes</option>
+                  <option value={15}>15 minutes</option>
+                  <option value={30}>30 minutes</option>
+                  <option value={60}>1 hour</option>
+                  <option value={0}>Never</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Data Management */}
+          <div style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <span style={styles.sectionIcon}>💾</span>
+              <h3>Data Management</h3>
+            </div>
+            <div style={styles.sectionContent}>
+              <div style={styles.buttonGroup}>
+                <button onClick={() => setShowExportModal(true)} style={styles.secondaryButton}>
+                  💾 Export Vault
+                </button>
+                <label style={styles.fileButton}>
+                  📂 Import Vault
+                  <input type="file" accept=".json" onChange={handleImport} style={{ display: 'none' }} />
+                </label>
+              </div>
+              {lastBackup && (
+                <div style={styles.infoText}>
+                  Last backup: {new Date(lastBackup).toLocaleString()}
+                </div>
+              )}
+              <button onClick={() => setShowConfirmModal(true)} style={styles.dangerButtonSmall}>
+                🗑️ Clear All Local Data
+              </button>
+            </div>
+          </div>
+
+          {/* Advanced Section */}
+          <div style={styles.section}>
+            <div style={styles.sectionHeader} onClick={() => setShowAdvanced(!showAdvanced)} style={{ cursor: 'pointer' }}>
+              <span style={styles.sectionIcon}>🔧</span>
+              <h3>Advanced</h3>
+              <span style={styles.expandIcon}>{showAdvanced ? '▼' : '▶'}</span>
+            </div>
+            {showAdvanced && (
+              <div style={styles.sectionContent}>
+                <div style={styles.infoBox}>
+                  <div><strong>Database Size:</strong> {(totalSize / 1024).toFixed(2)} KB</div>
+                  <div><strong>Total Entries:</strong> {entries.length}</div>
+                  <div><strong>Sync Status:</strong> {syncCID ? 'Active' : 'Not synced'}</div>
+                  <div><strong>CID:</strong> <code style={styles.code}>{syncCID || 'None'}</code></div>
+                </div>
+                <button onClick={() => navigator.clipboard.writeText(syncCID)} style={styles.secondaryButtonSmall}>
+                  Copy CID to Clipboard
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* About Section */}
+          <div style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <span style={styles.sectionIcon}>ℹ️</span>
+              <h3>About</h3>
+            </div>
+            <div style={styles.sectionContent}>
+              <p style={styles.aboutText}>AuraSafe Password Manager</p>
+              <p style={styles.aboutSubtext}>Secure password management with biometric authentication and IPFS sync</p>
+              <div style={styles.links}>
+                <a href="#" style={styles.link}>Privacy Policy</a>
+                <a href="#" style={styles.link}>Terms of Service</a>
+                <a href="#" style={styles.link}>Help & Support</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Modals */}
+      <ChangePasswordModal isOpen={showPasswordModal} onClose={() => setShowPasswordModal(false)} />
+      <ExportModal isOpen={showExportModal} onClose={() => setShowExportModal(false)} />
+      <ConfirmModal
+        isOpen={showConfirmModal}
+        onClose={() => setShowConfirmModal(false)}
+        onConfirm={handleClearData}
+        title="Clear All Data"
+        message="Are you sure you want to clear all local data? This action cannot be undone. Your vault will need to be synced again from IPFS."
+      />
     </>
   );
+}
+
+// ================= STYLES =================
+const styles = {
+  container: {
+    minHeight: '100vh',
+    background: 'linear-gradient(135deg, #0a2a0a 0%, #0f3a0f 100%)',
+    padding: '2rem',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  },
+  loadingCard: {
+    maxWidth: '400px',
+    margin: '0 auto',
+    background: 'rgba(20, 40, 20, 0.8)',
+    backdropFilter: 'blur(12px)',
+    borderRadius: '1.5rem',
+    padding: '3rem',
+    textAlign: 'center',
+    color: '#fff',
+  },
+  spinner: {
+    width: '40px',
+    height: '40px',
+    border: '3px solid rgba(255,255,255,0.2)',
+    borderTopColor: '#4caf50',
+    borderRadius: '50%',
+    animation: 'spin 0.8s linear infinite',
+    margin: '0 auto 1rem',
+  },
+  card: {
+    maxWidth: '1000px',
+    margin: '0 auto',
+    background: 'rgba(20, 40, 20, 0.7)',
+    backdropFilter: 'blur(12px)',
+    borderRadius: '1.5rem',
+    padding: '2rem',
+    boxShadow: '0 20px 35px -10px rgba(0,0,0,0.5)',
+    border: '1px solid rgba(76,175,80,0.3)',
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '2rem',
+    flexWrap: 'wrap',
+    gap: '1rem',
+  },
+  headerLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '1rem',
+  },
+  headerRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+  },
+  version: {
+    fontSize: '0.75rem',
+    color: '#9CA3AF',
+    background: 'rgba(0,0,0,0.3)',
+    padding: '0.25rem 0.75rem',
+    borderRadius: '1rem',
+  },
+  title: {
+    fontSize: '1.8rem',
+    fontWeight: 700,
+    background: 'linear-gradient(120deg, #fff, #a5d6a5)',
+    backgroundClip: 'text',
+    WebkitBackgroundClip: 'text',
+    color: 'transparent',
+    margin: 0,
+  },
+  backButton: {
+    background: 'rgba(255,255,255,0.1)',
+    border: '1px solid rgba(76,175,80,0.5)',
+    color: '#fff',
+    padding: '0.5rem 1rem',
+    borderRadius: '2rem',
+    cursor: 'pointer',
+    fontSize: '0.85rem',
+    transition: 'all 0.2s',
+  },
+  dashboard: {
+    marginBottom: '2rem',
+  },
+  dashboardTitle: {
+    fontSize: '1.2rem',
+    color: '#C8E6C9',
+    marginBottom: '1rem',
+  },
+  dashboardGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+    gap: '1rem',
+  },
+  metricCard: {
+    background: 'rgba(30,50,30,0.6)',
+    borderRadius: '1rem',
+    padding: '1rem',
+    textAlign: 'center',
+    border: '1px solid rgba(76,175,80,0.3)',
+    transition: 'transform 0.2s',
+  },
+  metricIcon: { fontSize: '1.5rem', marginBottom: '0.5rem' },
+  metricValue: { fontSize: '1.3rem', fontWeight: 'bold', color: '#fff' },
+  metricLabel: { fontSize: '0.6rem', color: '#c8e6c9', textTransform: 'uppercase' },
+  progressBar: { height: '3px', background: 'rgba(255,255,255,0.2)', borderRadius: '2px', marginTop: '0.5rem', overflow: 'hidden' },
+  progressFill: { height: '100%', background: '#4caf50', borderRadius: '2px', transition: 'width 0.3s' },
+  cidPreview: { fontSize: '0.55rem', color: '#a5d6a5', marginTop: '0.25rem', wordBreak: 'break-all' },
+  section: {
+    marginBottom: '1.5rem',
+    padding: '1rem',
+    background: 'rgba(0,0,0,0.2)',
+    borderRadius: '1rem',
+  },
+  sectionHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.75rem',
+    marginBottom: '1rem',
+    paddingBottom: '0.5rem',
+    borderBottom: '1px solid rgba(76,175,80,0.3)',
+  },
+  sectionIcon: { fontSize: '1.3rem' },
+  sectionContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.75rem',
+  },
+  primaryButton: {
+    background: 'linear-gradient(135deg, #2e7d32, #1b5e20)',
+    color: '#fff',
+    border: 'none',
+    padding: '0.6rem 1.2rem',
+    borderRadius: '0.5rem',
+    cursor: 'pointer',
+    fontSize: '0.85rem',
+    fontWeight: 500,
+    transition: 'all 0.2s',
+  },
+  dangerButton: {
+    background: '#dc3545',
+    color: '#fff',
+    border: 'none',
+    padding: '0.6rem 1.2rem',
+    borderRadius: '0.5rem',
+    cursor: 'pointer',
+    fontSize: '0.85rem',
+    fontWeight: 500,
+    transition: 'all 0.2s',
+  },
+  dangerButtonSmall: {
+    background: 'rgba(220,53,69,0.2)',
+    color: '#f87171',
+    border: '1px solid #dc3545',
+    padding: '0.4rem 0.8rem',
+    borderRadius: '0.5rem',
+    cursor: 'pointer',
+    fontSize: '0.75rem',
+    transition: 'all 0.2s',
+    alignSelf: 'flex-start',
+  },
+  secondaryButton: {
+    background: 'rgba(255,255,255,0.1)',
+    border: '1px solid rgba(76,175,80,0.5)',
+    color: '#fff',
+    padding: '0.5rem 1rem',
+    borderRadius: '2rem',
+    cursor: 'pointer',
+    fontSize: '0.8rem',
+    transition: 'all 0.2s',
+  },
+  secondaryButtonSmall: {
+    background: 'rgba(255,255,255,0.1)',
+    border: '1px solid rgba(76,175,80,0.5)',
+    color: '#fff',
+    padding: '0.3rem 0.8rem',
+    borderRadius: '1rem',
+    cursor: 'pointer',
+    fontSize: '0.7rem',
+    transition: 'all 0.2s',
+    alignSelf: 'flex-start',
+  },
+  fileButton: {
+    background: 'rgba(255,255,255,0.1)',
+    border: '1px solid rgba(76,175,80,0.5)',
+    color: '#fff',
+    padding: '0.5rem 1rem',
+    borderRadius: '2rem',
+    cursor: 'pointer',
+    fontSize: '0.8rem',
+    transition: 'all 0.2s',
+    display: 'inline-block',
+  },
+  buttonGroup: {
+    display: 'flex',
+    gap: '0.75rem',
+    flexWrap: 'wrap',
+  },
+  toggle: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.75rem',
+    cursor: 'pointer',
+    width: 'fit-content',
+  },
+  toggleSlider: {
+    position: 'relative',
+    display: 'inline-block',
+    width: '44px',
+    height: '22px',
+    background: '#2c3a2c',
+    borderRadius: '34px',
+    transition: '0.3s',
+  },
+  toggleLabel: { fontSize: '0.85rem', color: '#a5d6a5' },
+  settingRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '0.5rem',
+  },
+  select: {
+    background: '#111827',
+    border: '1px solid #374151',
+    borderRadius: '0.5rem',
+    padding: '0.4rem 0.8rem',
+    color: '#fff',
+    fontSize: '0.8rem',
+    cursor: 'pointer',
+  },
+  syncMessage: {
+    marginTop: '0.5rem',
+    padding: '0.5rem',
+    borderRadius: '0.5rem',
+    fontSize: '0.7rem',
+    background: 'rgba(0,0,0,0.3)',
+    color: '#c8e6c9',
+  },
+  infoText: {
+    fontSize: '0.7rem',
+    color: '#9CA3AF',
+  },
+  infoBox: {
+    background: 'rgba(0,0,0,0.3)',
+    padding: '0.75rem',
+    borderRadius: '0.5rem',
+    fontSize: '0.75rem',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.25rem',
+  },
+  code: {
+    fontFamily: 'monospace',
+    fontSize: '0.7rem',
+    wordBreak: 'break-all',
+  },
+  expandIcon: {
+    marginLeft: 'auto',
+    fontSize: '0.7rem',
+    color: '#9CA3AF',
+  },
+  aboutText: { color: '#fff', marginBottom: '0.25rem', fontSize: '0.85rem' },
+  aboutSubtext: { color: '#9CA3AF', fontSize: '0.75rem', marginBottom: '0.5rem' },
+  links: {
+    display: 'flex',
+    gap: '1rem',
+    flexWrap: 'wrap',
+    marginTop: '0.5rem',
+  },
+  link: {
+    color: '#60A5FA',
+    fontSize: '0.7rem',
+    textDecoration: 'none',
+  },
+  toast: {
+    position: 'fixed',
+    bottom: '20px',
+    right: '20px',
+    padding: '12px 20px',
+    borderRadius: '8px',
+    fontSize: '13px',
+    zIndex: 1000,
+    animation: 'slideIn 0.3s ease',
+  },
+  toastSuccess: { background: '#10b981', color: '#fff' },
+  toastError: { background: '#ef4444', color: '#fff' },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(0,0,0,0.85)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10000,
+  },
+  modalContent: {
+    background: '#1F2937',
+    borderRadius: '1rem',
+    padding: '1.5rem',
+    width: '90%',
+    maxWidth: '420px',
+    color: '#fff',
+    border: '1px solid rgba(76,175,80,0.3)',
+  },
+  modalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '1rem',
+  },
+  modalClose: {
+    background: 'none',
+    border: 'none',
+    color: '#fff',
+    fontSize: '1.5rem',
+    cursor: 'pointer',
+  },
+  formGroup: { marginBottom: '1rem' },
+  formInput: {
+    width: '100%',
+    padding: '0.5rem',
+    borderRadius: '0.5rem',
+    border: '1px solid #374151',
+    background: '#111827',
+    color: '#fff',
+    fontSize: '0.85rem',
+  },
+  passwordWrapper: { position: 'relative' },
+  eyeButton: {
+    position: 'absolute',
+    right: '0.5rem',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: '0.9rem',
+  },
+  strengthBar: { marginTop: '0.25rem' },
+  modalActions: {
+    display: 'flex',
+    gap: '0.75rem',
+    marginTop: '1rem',
+  },
+  cancelBtn: {
+    flex: 1,
+    padding: '0.5rem',
+    background: '#4B5563',
+    border: 'none',
+    borderRadius: '0.5rem',
+    color: '#fff',
+    cursor: 'pointer',
+  },
+  saveBtn: {
+    flex: 1,
+    padding: '0.5rem',
+    background: '#2E7D32',
+    border: 'none',
+    borderRadius: '0.5rem',
+    color: '#fff',
+    cursor: 'pointer',
+  },
+};
+
+// Add animations
+if (typeof document !== 'undefined' && !document.getElementById('settings-animations')) {
+  const style = document.createElement('style');
+  style.id = 'settings-animations';
+  style.textContent = `
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    input:checked + .toggle-slider { background: #2e7d32; }
+    input:checked + .toggle-slider:before { transform: translateX(22px); }
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 2px;
+      bottom: 2px;
+      background: white;
+      border-radius: 50%;
+      transition: 0.3s;
+    }
+    button:hover { transform: translateY(-1px); filter: brightness(1.05); }
+    .toggle input { display: none; }
+  `;
+  document.head.appendChild(style);
 }

@@ -92,13 +92,24 @@ async function getDatabase() {
   return db;
 }
 
-// ===================== BROADCAST VAULT STATE =====================
+// ===================== BROADCAST VAULT STATE TO ALL WINDOWS =====================
+function broadcastVaultStateToAllWindows() {
+  console.log('[Main] Broadcasting vault status to all windows:', vaultUnlocked);
+  BrowserWindow.getAllWindows().forEach((win) => {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('vault-status-change', { unlocked: vaultUnlocked });
+    }
+  });
+}
+
+// Legacy broadcast for main window only
 function broadcastVaultState() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('vault:status-changed', {
       unlocked: vaultUnlocked
     });
   }
+  broadcastVaultStateToAllWindows();
 }
 
 // ===================== WINDOW =====================
@@ -192,6 +203,8 @@ ipcMain.handle('vault:init', async (event, masterPassword) => {
         url TEXT,
         notes TEXT,
         category TEXT,
+        totpSecret TEXT,
+        passkeyId TEXT,
         created_at INTEGER,
         updated_at INTEGER
       )
@@ -222,16 +235,16 @@ ipcMain.on('window:close', () => {
   if (mainWindow) mainWindow.close();
 });
 
-// File system handlers (with security restrictions)
+// File system handlers
 ipcMain.handle('fs:readFile', async (event, filePath) => {
   try {
     const userDataPath = app.getPath('userData');
     const resolvedPath = path.resolve(filePath);
-    
+
     if (!resolvedPath.startsWith(userDataPath)) {
       throw new Error('Access denied: Cannot read outside userData directory');
     }
-    
+
     return await fs.promises.readFile(resolvedPath, 'utf-8');
   } catch (error) {
     console.error('[fs:readFile] Error:', error);
@@ -243,11 +256,11 @@ ipcMain.handle('fs:writeFile', async (event, filePath, data) => {
   try {
     const userDataPath = app.getPath('userData');
     const resolvedPath = path.resolve(filePath);
-    
+
     if (!resolvedPath.startsWith(userDataPath)) {
       throw new Error('Access denied: Cannot write outside userData directory');
     }
-    
+
     await fs.promises.writeFile(resolvedPath, data, 'utf-8');
     return { success: true };
   } catch (error) {
@@ -296,9 +309,8 @@ ipcMain.handle('sync:getCID', async () => {
   }
 });
 
-// ===================== ENHANCED VAULT CRUD OPERATIONS =====================
+// ===================== VAULT CRUD OPERATIONS =====================
 
-// ================= SAVE ENTRY (CREATE OR UPDATE) - FIXED UNLOCK CHECK =================
 ipcMain.handle('vault:saveEntry', async (event, entry) => {
   const unlocked = vaultUnlocked || isUnlocked();
 
@@ -310,7 +322,6 @@ ipcMain.handle('vault:saveEntry', async (event, entry) => {
     const db = await getDatabase();
     const now = Date.now();
 
-    // Normalize input (prevents silent DB issues)
     const safeEntry = {
       id: entry?.id,
       title: entry?.title || entry?.name || 'Untitled',
@@ -319,131 +330,202 @@ ipcMain.handle('vault:saveEntry', async (event, entry) => {
       url: entry?.url || '',
       notes: entry?.notes || '',
       category: entry?.category || 'credential',
+      totpSecret: entry?.totpSecret || '',
+      passkeyId: entry?.passkeyId || '',
     };
 
-    // ================= UPDATE =================
     if (safeEntry.id) {
       await db.run(
         `UPDATE vault_entries SET 
-          title = ?, 
-          username = ?, 
-          password = ?, 
-          url = ?, 
-          notes = ?, 
-          category = ?, 
-          updated_at = ?
+          title = ?, username = ?, password = ?, url = ?, notes = ?, 
+          category = ?, totpSecret = ?, passkeyId = ?, updated_at = ?
          WHERE id = ?`,
         [
-          safeEntry.title,
-          safeEntry.username,
-          safeEntry.password,
-          safeEntry.url,
-          safeEntry.notes,
-          safeEntry.category,
-          now,
-          safeEntry.id
+          safeEntry.title, safeEntry.username, safeEntry.password,
+          safeEntry.url, safeEntry.notes, safeEntry.category,
+          safeEntry.totpSecret, safeEntry.passkeyId, now, safeEntry.id
         ]
       );
-
-      return {
-        ...safeEntry,
-        updatedAt: now
-      };
+      return { ...safeEntry, updatedAt: now };
     }
 
-    // ================= INSERT =================
     const id = randomBytes(16).toString('hex');
-
     await db.run(
       `INSERT INTO vault_entries (
-        id,
-        title,
-        username,
-        password,
-        url,
-        notes,
-        category,
-        created_at,
-        updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, title, username, password, url, notes, category, totpSecret, passkeyId, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        id,
-        safeEntry.title,
-        safeEntry.username,
-        safeEntry.password,
-        safeEntry.url,
-        safeEntry.notes,
-        safeEntry.category,
-        now,
-        now
+        id, safeEntry.title, safeEntry.username, safeEntry.password,
+        safeEntry.url, safeEntry.notes, safeEntry.category,
+        safeEntry.totpSecret, safeEntry.passkeyId, now, now
       ]
     );
 
-    return {
-      ...safeEntry,
-      id,
-      createdAt: now,
-      updatedAt: now
-    };
-
+    return { ...safeEntry, id, createdAt: now, updatedAt: now };
   } catch (error) {
     console.error('[vault:saveEntry] Error:', error);
     throw error;
   }
 });
 
-// ================= DELETE ENTRY - FIXED UNLOCK CHECK =================
 ipcMain.handle('vault:deleteEntry', async (event, id) => {
- const unlocked = vaultUnlocked || isUnlocked();
-
-  if (!unlocked) {
-    throw new Error('Vault is locked');
-  }
+  const unlocked = vaultUnlocked || isUnlocked();
+  if (!unlocked) throw new Error('Vault is locked');
 
   try {
     const db = await getDatabase();
-
-    await db.run(
-      `DELETE FROM vault_entries WHERE id = ?`,
-      [id]
-    );
-
+    await db.run(`DELETE FROM vault_entries WHERE id = ?`, [id]);
     return { success: true };
-
   } catch (error) {
     console.error('[vault:deleteEntry] Error:', error);
     throw error;
   }
 });
 
-// ================= GET ENTRIES - FIXED UNLOCK CHECK =================
 ipcMain.handle('vault:getEntries', async () => {
   const unlocked = vaultUnlocked || isUnlocked();
-
-  if (!unlocked) {
-    throw new Error('Vault is locked');
-  }
+  if (!unlocked) throw new Error('Vault is locked');
 
   try {
     const db = await getDatabase();
-
-    const rows = await db.all(
-      `SELECT * FROM vault_entries ORDER BY created_at DESC`
-    );
-
+    const rows = await db.all(`SELECT * FROM vault_entries ORDER BY created_at DESC`);
     return rows || [];
-
   } catch (error) {
     console.error('[vault:getEntries] Error:', error);
     throw error;
   }
 });
 
+// ===================== UNIFIED VAULT STATE HANDLERS =====================
+
+// Primary unlock handler (called from preload)
+ipcMain.handle('unlock-vault', async (event, password) => {
+  try {
+    const result = await unlockVault(password);
+    const success = result.success;
+
+    if (success) {
+      vaultUnlocked = true;
+      masterKey = result.key;
+
+      // Notify ALL renderer windows
+      BrowserWindow.getAllWindows().forEach((win) => {
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('vault-status-change', { unlocked: true });
+        }
+      });
+      broadcastVaultState();
+      
+      console.log('[Main] Vault unlocked via unlock-vault');
+    }
+
+    return { success };
+  } catch (error) {
+    console.error('[unlock-vault] Error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Check if vault is unlocked
+ipcMain.handle('is-unlocked', () => {
+  return vaultUnlocked;
+});
+
+// Lock vault
+ipcMain.handle('lock-vault', async () => {
+  try {
+    await lockVault();
+    vaultUnlocked = false;
+    masterKey = null;
+
+    // Notify ALL renderer windows
+    BrowserWindow.getAllWindows().forEach((win) => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('vault-status-change', { unlocked: false });
+      }
+    });
+    broadcastVaultState();
+
+    console.log('[Main] Vault locked via lock-vault');
+    return true;
+  } catch (error) {
+    console.error('[lock-vault] Error:', error);
+    return false;
+  }
+});
+
+// Legacy vault:unlock handler (kept for backward compatibility)
+ipcMain.handle('vault:unlock', async (event, masterPassword) => {
+  try {
+    const result = await unlockVault(masterPassword);
+    if (result.success) {
+      vaultUnlocked = true;
+      masterKey = result.key;
+      broadcastVaultState();
+      broadcastVaultStateToAllWindows();
+    }
+    return result;
+  } catch (error) {
+    console.error('[vault:unlock] Error:', error);
+    throw error;
+  }
+});
+
+// Legacy vault:lock handler
+ipcMain.handle('vault:lock', async () => {
+  try {
+    await lockVault();
+    vaultUnlocked = false;
+    masterKey = null;
+    broadcastVaultState();
+    broadcastVaultStateToAllWindows();
+    return { success: true };
+  } catch (error) {
+    console.error('[vault:lock] Error:', error);
+    throw error;
+  }
+});
+
+// Legacy vault:isUnlocked handler
+ipcMain.handle('vault:isUnlocked', async () => {
+  try {
+    const unlocked = isUnlocked();
+    vaultUnlocked = unlocked;
+    return { unlocked };
+  } catch (error) {
+    console.error('[vault:isUnlocked] Error:', error);
+    return { unlocked: false };
+  }
+});
+
+// Bulk save entries
+ipcMain.handle('vault:saveEntries', async (event, entries) => {
+  const unlocked = vaultUnlocked || isUnlocked();
+  if (!unlocked) throw new Error('Vault is locked');
+
+  try {
+    await saveVaultEntries(entries);
+    return { success: true };
+  } catch (error) {
+    console.error('[vault:saveEntries] Error:', error);
+    throw error;
+  }
+});
+
 // Biometric handlers
+ipcMain.handle('biometric:isAvailable', async () => {
+  try {
+    const available = await isBiometricAvailable();
+    return { available };
+  } catch (error) {
+    console.error('[biometric:isAvailable] Error:', error);
+    return { available: false };
+  }
+});
+
 ipcMain.handle('biometric:isEnabled', async () => {
   try {
-    const enabled = settings.get('biometricEnabled', false);
-    return enabled;
+    return settings.get('biometricEnabled', false);
   } catch (error) {
     console.error('[biometric:isEnabled] Error:', error);
     return false;
@@ -483,6 +565,57 @@ ipcMain.handle('biometric:unlock', async () => {
   }
 });
 
+// Passkey handlers
+ipcMain.handle('passkey:getAll', async () => {
+  try {
+    const db = await getDatabase();
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS passkeys (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        credentialId TEXT UNIQUE,
+        publicKey TEXT,
+        signCount INTEGER,
+        transports TEXT,
+        created_at INTEGER
+      )
+    `);
+    const passkeys = await db.all('SELECT * FROM passkeys ORDER BY created_at DESC');
+    return { success: true, data: passkeys };
+  } catch (error) {
+    console.error('[passkey:getAll] Error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('passkey:save', async (event, passkeyData) => {
+  try {
+    const db = await getDatabase();
+    await db.run(
+      `INSERT OR REPLACE INTO passkeys (id, name, credentialId, publicKey, signCount, transports, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      passkeyData.id, passkeyData.name, passkeyData.credentialId,
+      passkeyData.publicKey, passkeyData.signCount,
+      JSON.stringify(passkeyData.transports), passkeyData.created_at
+    );
+    return { success: true };
+  } catch (error) {
+    console.error('[passkey:save] Error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('passkey:delete', async (event, id) => {
+  try {
+    const db = await getDatabase();
+    await db.run('DELETE FROM passkeys WHERE id = ?', id);
+    return { success: true };
+  } catch (error) {
+    console.error('[passkey:delete] Error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Settings handlers
 ipcMain.handle('settings:getAutoSync', async () => {
   try {
@@ -503,103 +636,27 @@ ipcMain.handle('settings:setAutoSync', async (event, enabled) => {
   }
 });
 
-// Vault state handlers with unlock tracking
-ipcMain.handle('vault:unlock', async (event, masterPassword) => {
-  try {
-    const result = await unlockVault(masterPassword);
-    if (result.success) {
-      vaultUnlocked = true;
-      masterKey = result.key;
-      broadcastVaultState();
-    }
-    return result;
-  } catch (error) {
-    console.error('[vault:unlock] Error:', error);
-    throw error;
-  }
-});
-
-ipcMain.handle('vault:lock', async () => {
-  try {
-    await lockVault();
-    vaultUnlocked = false;
-    masterKey = null;
-    broadcastVaultState();
-    return { success: true };
-  } catch (error) {
-    console.error('[vault:lock] Error:', error);
-    throw error;
-  }
-});
-
-ipcMain.handle('vault:isUnlocked', async () => {
-  try {
-    const unlocked = isUnlocked();
-    vaultUnlocked = unlocked;
-    return { unlocked };
-  } catch (error) {
-    console.error('[vault:isUnlocked] Error:', error);
-    return { unlocked: false };
-  }
-});
-
-// ================= SAVE ENTRIES (BULK) - FIXED UNLOCK CHECK =================
-ipcMain.handle('vault:saveEntries', async (event, entries) => {
-  const unlocked = vaultUnlocked || isUnlocked();
-
-  if (!unlocked) {
-    throw new Error('Vault is locked');
-  }
-  
-  try {
-    await saveVaultEntries(entries);
-    return { success: true };
-  } catch (error) {
-    console.error('[vault:saveEntries] Error:', error);
-    throw error;
-  }
-});
-
-ipcMain.handle('biometric:isAvailable', async () => {
-  try {
-    const available = await isBiometricAvailable();
-    return { available };
-  } catch (error) {
-    console.error('[biometric:isAvailable] Error:', error);
-    return { available: false };
-  }
-});
-
-// ===================== CHANGE PASSWORD HANDLER =====================
+// Change password handler
 ipcMain.handle('vault:changePassword', async (event, currentPassword, newPassword) => {
   try {
     console.log('[vault:changePassword] Starting password change...');
-    
-    // 1. First verify current password by unlocking
+
     const unlockResult = await unlockVault(currentPassword);
     if (!unlockResult.success) {
-      console.error('[vault:changePassword] Current password incorrect');
       return { success: false, error: 'Current password is incorrect' };
     }
-    
-    // 2. Get all current entries while vault is unlocked
+
     const entries = await loadVaultEntries();
-    console.log(`[vault:changePassword] Found ${entries.length} entries to re-encrypt`);
-    
-    // 3. Initialize new vault with new password (this creates new encryption)
     const initResult = await initVault(newPassword);
     if (!initResult.success) {
       return { success: false, error: 'Failed to initialize new vault encryption' };
     }
-    
-    // 4. Re-save all entries with new encryption
+
     for (const entry of entries) {
       await saveVaultEntries([entry]);
     }
-    
-    console.log('[vault:changePassword] Password changed successfully');
+
     return { success: true };
-    
   } catch (error) {
     console.error('[vault:changePassword] Error:', error);
     return { success: false, error: error.message };
@@ -609,9 +666,7 @@ ipcMain.handle('vault:changePassword', async (event, currentPassword, newPasswor
 // ===================== LIFECYCLE =====================
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    const url = app.isPackaged
-      ? 'http://localhost'
-      : 'http://localhost:3000';
+    const url = app.isPackaged ? 'http://localhost' : 'http://localhost:3000';
     createWindow(url);
   }
 });
