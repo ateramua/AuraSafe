@@ -1,6 +1,13 @@
 // ===================== POPUP SCRIPT =====================
-// AuraSafe Browser Extension - Popup UI Controller
-// Version: 1.3.0 - Added vault status sync from desktop
+// AuraSafe Browser Extension - Popup UI Controller (Firefox Compatible)
+// Version: 2.0.0 - Firefox WebExtension
+
+// ===================== CROSS-BROWSER COMPATIBILITY =====================
+// Detect which browser API is available
+const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
+const storage = browserAPI.storage;
+const runtime = browserAPI.runtime;
+const tabs = browserAPI.tabs;
 
 // ===================== DOM ELEMENTS =====================
 const elements = {
@@ -106,16 +113,17 @@ async function requestCredentialsFromDesktop() {
       reject(new Error('Timeout waiting for credentials'));
     }, 5000);
     
-    // Send message to background script to request credentials
-    chrome.runtime.sendMessage({ type: 'GET_CREDENTIALS_FROM_DESKTOP' }, (response) => {
+    // Send message to background script to request credentials (Firefox uses callbacks or promises)
+    runtime.sendMessage({ type: 'GET_CREDENTIALS_FROM_DESKTOP' }).then(response => {
       clearTimeout(timeout);
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-      } else if (response && response.success) {
+      if (response && response.success) {
         resolve(response.credentials);
       } else {
         reject(new Error(response?.error || 'Failed to get credentials'));
       }
+    }).catch(err => {
+      clearTimeout(timeout);
+      reject(new Error(err.message));
     });
   });
 }
@@ -124,7 +132,7 @@ async function requestCredentialsFromDesktop() {
 async function checkCurrentVaultStatus() {
   try {
     // First check if we have stored vault status
-    const result = await chrome.storage.local.get(['aurasafe_vault_status', 'aurasafe_credentials']);
+    const result = await storage.local.get(['aurasafe_vault_status', 'aurasafe_credentials']);
     
     if (result.aurasafe_vault_status) {
       const isUnlocked = result.aurasafe_vault_status.unlocked === true;
@@ -147,7 +155,7 @@ async function checkCurrentVaultStatus() {
 // ===================== REQUEST FRESH STATUS FROM DESKTOP =====================
 async function requestFreshStatus() {
   try {
-    const response = await chrome.runtime.sendMessage({ type: 'GET_VAULT_STATUS_FROM_DESKTOP' });
+    const response = await runtime.sendMessage({ type: 'GET_VAULT_STATUS_FROM_DESKTOP' });
     if (response && response.unlocked !== undefined) {
       updateVaultUI(response.unlocked);
       if (response.unlocked && response.credentials) {
@@ -160,6 +168,18 @@ async function requestFreshStatus() {
     console.log('Could not get fresh status:', err);
   }
   return false;
+}
+
+// ===================== FILL CREDENTIALS IN ACTIVE TAB =====================
+async function fillCredentials(entry) {
+  try {
+    const [tab] = await tabs.query({ active: true, currentWindow: true });
+    await tabs.sendMessage(tab.id, { type: 'FILL', payload: entry });
+    showNotification('✓ Credentials filled!');
+    setTimeout(() => window.close(), 500);
+  } catch (err) {
+    showNotification('Failed to fill credentials', true);
+  }
 }
 
 // ===================== RENDER ENTRIES =====================
@@ -224,10 +244,7 @@ function attachButtonEventListeners(entries) {
       if (entryData) {
         try {
           const entry = JSON.parse(entryData);
-          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-          await chrome.tabs.sendMessage(tab.id, { type: 'FILL', payload: entry });
-          showNotification('✓ Credentials filled!');
-          setTimeout(() => window.close(), 500);
+          await fillCredentials(entry);
         } catch (err) {
           showNotification('Failed to fill credentials', true);
         }
@@ -269,7 +286,7 @@ async function loadEntries() {
     </div>`;
 
   try {
-    const result = await chrome.storage.local.get(['aurasafe_credentials']);
+    const result = await storage.local.get(['aurasafe_credentials']);
     currentEntries = result.aurasafe_credentials || [];
     renderEntries();
   } catch (err) {
@@ -288,7 +305,7 @@ if (elements.lockBtn) {
   elements.lockBtn.addEventListener('click', async () => {
     if (vaultUnlocked) {
       // Lock the vault
-      chrome.runtime.sendMessage({ type: 'LOCK_VAULT' });
+      runtime.sendMessage({ type: 'LOCK_VAULT' });
       updateVaultUI(false);
       currentEntries = [];
       renderEntries();
@@ -301,7 +318,7 @@ if (elements.lockBtn) {
         const credentials = await requestCredentialsFromDesktop();
         
         if (credentials && credentials.length > 0) {
-          await chrome.storage.local.set({ aurasafe_credentials: credentials });
+          await storage.local.set({ aurasafe_credentials: credentials });
           updateVaultUI(true);
           currentEntries = credentials;
           renderEntries();
@@ -323,7 +340,7 @@ if (elements.refreshBtn) {
 
 if (elements.settingsBtn) {
   elements.settingsBtn.addEventListener('click', () => {
-    chrome.runtime.sendMessage({ type: 'OPEN_SETTINGS' });
+    runtime.sendMessage({ type: 'OPEN_SETTINGS' });
   });
 }
 
@@ -338,7 +355,7 @@ if (elements.searchInput) {
 }
 
 // ===================== STORAGE SYNC =====================
-chrome.storage.onChanged.addListener((changes, area) => {
+storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.aurasafe_credentials) {
     currentEntries = changes.aurasafe_credentials.newValue || [];
     renderEntries();
@@ -364,7 +381,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 // ===================== MESSAGE HANDLING =====================
-chrome.runtime.onMessage.addListener((message) => {
+runtime.onMessage.addListener((message) => {
   if (message.type === 'CONNECTION_STATUS') {
     updateConnectionUI(message.payload?.status || 'disconnected');
   }
@@ -398,7 +415,7 @@ async function init() {
     updateConnectionUI('connecting');
     
     // Try to load credentials from storage first
-    const storageResult = await chrome.storage.local.get(['aurasafe_credentials', 'aurasafe_vault_status']);
+    const storageResult = await storage.local.get(['aurasafe_credentials', 'aurasafe_vault_status']);
     
     if (storageResult.aurasafe_credentials && storageResult.aurasafe_credentials.length > 0) {
       // We have credentials, vault is unlocked
@@ -413,9 +430,10 @@ async function init() {
       updateConnectionUI('connected');
       
       // Request fresh data from background
-      chrome.runtime.sendMessage({ type: 'REFRESH_FROM_DESKTOP' }, async (response) => {
+      try {
+        const response = await runtime.sendMessage({ type: 'REFRESH_FROM_DESKTOP' });
         if (response && response.success) {
-          const newResult = await chrome.storage.local.get(['aurasafe_credentials']);
+          const newResult = await storage.local.get(['aurasafe_credentials']);
           if (newResult.aurasafe_credentials && newResult.aurasafe_credentials.length > 0) {
             updateVaultUI(true);
             currentEntries = newResult.aurasafe_credentials;
@@ -427,7 +445,10 @@ async function init() {
         } else {
           await loadEntries(); // Show empty state
         }
-      });
+      } catch (err) {
+        console.log('Refresh failed:', err);
+        await loadEntries(); // Show empty state
+      }
     }
   } catch (e) {
     console.error('Init error:', e);
@@ -441,7 +462,7 @@ init();
 
 // Refresh connection status periodically
 setInterval(async () => {
-  const result = await chrome.storage.local.get(['aurasafe_connection_status']);
+  const result = await storage.local.get(['aurasafe_connection_status']);
   const status = result.aurasafe_connection_status?.status || 'disconnected';
   updateConnectionUI(status);
 }, 5000);

@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AuraSafe Extension Settings</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+      background: linear-gradient(135deg, #0a2a0a 0%, #0f3a0f 100%);
+      color: #fff;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    .header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .logo-icon {
+      font-size: 48px;
+    }
+
+    .logo-text {
+      font-size: 32px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #fff, #a5d6a5);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .version {
+      font-size: 12px;
+      color: #c8e6c9;
+    }
+
+    /* Cards */
+    .card {
+      background: rgba(20, 40, 20, 0.8);
+      backdrop-filter: blur(12px);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      border: 1px solid rgba(76, 175, 80, 0.3);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      border-color: rgba(76, 175, 80, 0.5);
+    }
+
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #C8E6C9;
+      border-bottom: 1px solid rgba(76, 175, 80, 0.3);
+      padding-bottom: 0.5rem;
+    }
+
+    .card-title-icon {
+      font-size: 1.3rem;
+    }
+
+    /* Status Indicator */
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .status-label {
+      font-weight: 500;
+      color: #c8e6c9;
+    }
+
+    .status-value {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .status-dot.connected {
+      background: #10b981;
+      box-shadow: 0 0 4px #10b981;
+    }
+
+    .status-dot.connecting {
+      background: #f59e0b;
+      animation: pulse 1s infinite;
+    }
+
+    .status-dot.disconnected {
+      background: #ef4444;
+    }
+
+    .status-dot.unpaired {
+      background: #9ca3af;
+    }
+
+    /* Toggle Switch */
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 50px;
+      height: 24px;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #2c3a2c;
+      transition: 0.3s;
+      border-radius: 34px;
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: 0.3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .toggle-slider {
+      background: linear-gradient(145deg, #2e7d32, #1b5e20);
+    }
+
+    input:checked + .toggle-slider:before {
+      transform: translateX(26px);
+    }
+
+    /* Settings Row */
+    .setting-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid rgba(76, 175, 80, 0.2);
+    }
+
+    .setting-row:last-child {
+      border-bottom: none;
+    }
+
+    .setting-label {
+      font-weight: 500;
+      color: #c8e6c9;
+    }
+
+    .setting-description {
+      font-size: 0.7rem;
+      color: #9ca3af;
+      margin-top: 2px;
+    }
+
+    select {
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 0.5rem;
+      padding: 0.4rem 0.8rem;
+      color: #fff;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+
+    input[type="text"],
+    input[type="number"] {
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 0.5rem;
+      padding: 0.4rem 0.8rem;
+      color: #fff;
+      font-size: 0.8rem;
+      width: 150px;
+    }
+
+    /* Buttons */
+    .btn {
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      border: none;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #2e7d32, #1b5e20);
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(46, 125, 50, 0.4);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(76, 175, 80, 0.5);
+      color: #fff;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.2);
+      transform: translateY(-1px);
+    }
+
+    .btn-danger {
+      background: #dc3545;
+      color: #fff;
+    }
+
+    .btn-danger:hover {
+      background: #c82333;
+      transform: translateY(-1px);
+    }
+
+    .button-group {
+      display: flex;
+      gap: 1rem;
+      margin-top: 1rem;
+      flex-wrap: wrap;
+    }
+
+    /* Info Box */
+    .info-box {
+      background: rgba(0, 0, 0, 0.3);
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      font-size: 0.75rem;
+      margin-top: 1rem;
+    }
+
+    .info-box code {
+      font-family: monospace;
+      font-size: 0.7rem;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 0.2rem 0.4rem;
+      border-radius: 4px;
+      word-break: break-all;
+    }
+
+    /* Toast Notification */
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      z-index: 1000;
+      animation: slideIn 0.3s ease;
+    }
+
+    .toast-success {
+      background: #10b981;
+      color: #fff;
+    }
+
+    .toast-error {
+      background: #ef4444;
+      color: #fff;
+    }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      margin-top: 2rem;
+      padding-top: 1rem;
+      border-top: 1px solid rgba(76, 175, 80, 0.2);
+      font-size: 0.7rem;
+      color: #9ca3af;
+    }
+
+    .footer a {
+      color: #60a5fa;
+      text-decoration: none;
+    }
+
+    .footer a:hover {
+      text-decoration: underline;
+    }
+
+    /* Animations */
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    /* Utility */
+    .text-center {
+      text-align: center;
+    }
+
+    .mt-2 {
+      margin-top: 0.5rem;
+    }
+
+    .mb-2 {
+      margin-bottom: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="logo">
+        <span class="logo-icon">🔒</span>
+        <span class="logo-text">AuraSafe</span>
+      </div>
+      <div class="version">Browser Extension v1.0.0</div>
+    </div>
+
+    <!-- Connection Status Card -->
+    <div class="card">
+      <div class="card-title">
+        <span class="card-title-icon">🔌</span>
+        <span>Connection Status</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Desktop App Status:</span>
+        <div class="status-value">
+          <span class="status-dot" id="connectionDot"></span>
+          <span id="connectionText">Checking...</span>
+        </div>
+      </div>
+      <div class="button-group">
+        <button class="btn btn-secondary" id="reconnectBtn">🔄 Reconnect</button>
+        <button class="btn btn-secondary" id="pairBtn">🔗 Pair with Desktop</button>
+      </div>
+    </div>
+
+    <!-- General Settings Card -->
+    <div class="card">
+      <div class="card-title">
+        <span class="card-title-icon">⚙️</span>
+        <span>General Settings</span>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Auto-fill on Page Load</div>
+          <div class="setting-description">Automatically fill credentials when page loads</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="autoFillToggle">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Show Notifications</div>
+          <div class="setting-description">Show desktop notifications for actions</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="notificationsToggle">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Auto-lock Extension</div>
+          <div class="setting-description">Lock extension after inactivity (minutes)</div>
+        </div>
+        <select id="autoLockSelect">
+          <option value="0">Never</option>
+          <option value="5">5 minutes</option>
+          <option value="15">15 minutes</option>
+          <option value="30">30 minutes</option>
+          <option value="60">1 hour</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Default Password Length</div>
+          <div class="setting-description">Length of generated passwords</div>
+        </div>
+        <select id="passwordLengthSelect">
+          <option value="8">8 characters</option>
+          <option value="12">12 characters</option>
+          <option value="16">16 characters</option>
+          <option value="20">20 characters</option>
+          <option value="24">24 characters</option>
+          <option value="32">32 characters</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Security Card -->
+    <div class="card">
+      <div class="card-title">
+        <span class="card-title-icon">🛡️</span>
+        <span>Security</span>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Master Password Timeout</div>
+          <div class="setting-description">Require master password after period of inactivity</div>
+        </div>
+        <select id="masterPasswordTimeoutSelect">
+          <option value="0">Never</option>
+          <option value="5">5 minutes</option>
+          <option value="15">15 minutes</option>
+          <option value="30">30 minutes</option>
+          <option value="60">1 hour</option>
+        </select>
+      </div>
+      <div class="button-group">
+        <button class="btn btn-secondary" id="clearCacheBtn">🗑️ Clear Local Cache</button>
+        <button class="btn btn-danger" id="resetExtensionBtn">⚠️ Reset Extension</button>
+      </div>
+    </div>
+
+    <!-- About Card -->
+    <div class="card">
+      <div class="card-title">
+        <span class="card-title-icon">ℹ️</span>
+        <span>About</span>
+      </div>
+      <div class="info-box">
+        <div><strong>Version:</strong> 1.0.0</div>
+        <div><strong>Extension ID:</strong> <code id="extensionId">Loading...</code></div>
+        <div><strong>Desktop App Required:</strong> Yes (v1.0.0 or higher)</div>
+        <div class="mt-2">AuraSafe securely stores your passwords and syncs them across devices using IPFS.</div>
+      </div>
+      <div class="button-group">
+        <a href="https://aurasafe.com/docs" target="_blank" class="btn btn-secondary" style="text-decoration: none; display: inline-block;">📚 Documentation</a>
+        <a href="https://aurasafe.com/support" target="_blank" class="btn btn-secondary" style="text-decoration: none; display: inline-block;">🆘 Support</a>
+        <a href="https://github.com/ateramua/AuraSafe" target="_blank" class="btn btn-secondary" style="text-decoration: none; display: inline-block;">🐛 Report Issue</a>
+      </div>
+    </div>
+
+    <div class="footer">
+      <p>© 2025 AuraSafe. All rights reserved.</p>
+      <p><a href="#">Privacy Policy</a> | <a href="#">Terms of Service</a></p>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

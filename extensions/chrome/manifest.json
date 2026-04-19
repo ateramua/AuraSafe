@@ -3,41 +3,13 @@
   "name": "AuraSafe Password Manager",
   "short_name": "AuraSafe",
   "version": "1.0.0",
-  "description": "Secure password manager with biometric authentication, autofill, and encrypted vault sync",
-  "author": "AuraSafe Security",
-  "homepage_url": "https://aurasafe.com",
-  
-  "icons": {
-    "16": "icons/icon16.png",
-    "32": "icons/icon32.png",
-    "48": "icons/icon48.png",
-    "64": "icons/icon64.png",
-    "128": "icons/icon128.png"
-  },
-
-  "permissions": [
-    "activeTab",
-    "storage",
-    "clipboardWrite",
-    "clipboardRead",
-    "tabs",
-    "webNavigation",
-    "alarms",
-    "notifications"
-  ],
-
-  "host_permissions": [
-    "http://localhost:8765/*",
-    "ws://localhost:8765/*",
-    "http://*/*",
-    "https://*/*"
-  ],
-
+  "description": "Secure password manager",
+  "permissions": ["activeTab", "storage", "clipboardWrite", "clipboardRead", "tabs"],
+  "host_permissions": ["http://localhost:8765/*", "ws://localhost:8765/*", "http://*/*", "https://*/*"],
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
-
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
@@ -46,82 +18,20 @@
       "run_at": "document_idle"
     }
   ],
-
   "action": {
     "default_popup": "popup.html",
-    "default_title": "AuraSafe Password Manager",
-    "default_icon": {
-      "16": "icons/icon16.png",
-      "32": "icons/icon32.png",
-      "48": "icons/icon48.png",
-      "128": "icons/icon128.png"
-    }
+    "default_title": "AuraSafe"
   },
-
-  "commands": {
-    "_execute_action": {
-      "suggested_key": {
-        "default": "Ctrl+Shift+A",
-        "mac": "Command+Shift+A"
-      },
-      "description": "Open AuraSafe extension"
-    },
-    "fill-credentials": {
-      "suggested_key": {
-        "default": "Ctrl+Shift+F",
-        "mac": "Command+Shift+F"
-      },
-      "description": "Fill credentials on current page"
-    },
-    "generate-password": {
-      "suggested_key": {
-        "default": "Ctrl+Shift+G",
-        "mac": "Command+Shift+G"
-      },
-      "description": "Generate secure password"
-    },
-    "lock-vault": {
-      "suggested_key": {
-        "default": "Ctrl+Shift+L",
-        "mac": "Command+Shift+L"
-      },
-      "description": "Lock the vault"
-    }
-  },
-
   "web_accessible_resources": [
     {
-      "resources": [
-        "icons/*",
-        "popup.html",
-        "popup.js",
-        "styles.css",
-        "content.js",
-        "assets/*",
-        "fonts/*"
-      ],
+      "resources": ["popup.html", "popup.js", "styles.css", "content.js", "background.js", "pairing.html", "pairing.js"],
       "matches": ["<all_urls>"]
     }
   ],
-
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
-    "sandbox": "sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self' 'unsafe-inline' 'unsafe-eval'; child-src 'self'"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
-
-  "omnibox": {
-    "keyword": "as"
-  },
-
   "options_page": "options.html",
-  "options_ui": {
-    "page": "options.html",
-    "open_in_tab": false
-  },
-
   "incognito": "split",
-  "offline_enabled": true,
-
-  "minimum_chrome_version": "102",
-  "default_locale": "en"
+  "offline_enabled": true
 }
