@@ -35,6 +35,8 @@ function isApiMethodAvailable(methodName) {
       initVault: !!window.api?.initVault,
       lockVault: !!window.api?.lockVault,
       changePassword: !!window.api?.changePassword,
+      generatePairingCode: !!window.api?.generatePairingCode,
+      verifyPairingCode: !!window.api?.verifyPairingCode,
       biometric: !!window.api?.biometric,
       sync: !!window.api?.sync,
       settings: !!window.api?.settings,
@@ -319,6 +321,55 @@ export async function changePassword(currentPassword, newPassword) {
   }
 }
 
+// ===================== BROWSER EXTENSION PAIRING =====================
+
+/**
+ * Generate a pairing code for browser extension
+ * @returns {Promise<{secret: string}>}
+ */
+export async function generatePairingCode() {
+  if (!isElectron) {
+    console.warn('Not in Electron environment');
+    return { secret: null };
+  }
+  
+  if (!window.api?.generatePairingCode) {
+    console.error('generatePairingCode API not available');
+    return { secret: null };
+  }
+  
+  try {
+    return await window.api.generatePairingCode();
+  } catch (error) {
+    console.error('[API] generatePairingCode error:', error);
+    return { secret: null };
+  }
+}
+
+/**
+ * Verify a pairing code for browser extension
+ * @param {string} secret - The pairing code to verify
+ * @returns {Promise<{valid: boolean}>}
+ */
+export async function verifyPairingCode(secret) {
+  if (!isElectron) {
+    console.warn('Not in Electron environment');
+    return { valid: false };
+  }
+  
+  if (!window.api?.verifyPairingCode) {
+    console.error('verifyPairingCode API not available');
+    return { valid: false };
+  }
+  
+  try {
+    return await window.api.verifyPairingCode(secret);
+  } catch (error) {
+    console.error('[API] verifyPairingCode error:', error);
+    return { valid: false };
+  }
+}
+
 // ===================== BIOMETRIC OPERATIONS =====================
 
 /**
@@ -569,6 +620,10 @@ export default {
   initVault,
   lockVault,
   changePassword,
+  
+  // Browser Extension Pairing
+  generatePairingCode,
+  verifyPairingCode,
   
   // Biometric
   isBiometricAvailable,

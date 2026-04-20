@@ -60,7 +60,7 @@ const api = {
       throw error;
     }
   },
-  
+
   deleteVaultEntry: async (id) => {
     try {
       return await ipcRenderer.invoke('vault:deleteEntry', id);
@@ -69,7 +69,7 @@ const api = {
       throw error;
     }
   },
-  
+
   getVaultEntries: async () => {
     try {
       return await ipcRenderer.invoke('vault:getEntries');
@@ -78,7 +78,7 @@ const api = {
       throw error;
     }
   },
-  
+
   // ===================== VAULT STATE =====================
   isInitialized: async () => {
     try {
@@ -89,7 +89,7 @@ const api = {
       return false;
     }
   },
-  
+
   // Primary unlock method - uses the unified handler
   unlockVault: async (password) => {
     try {
@@ -100,7 +100,7 @@ const api = {
       throw error;
     }
   },
-  
+
   // Primary isUnlocked check - uses the unified handler
   isUnlocked: async () => {
     try {
@@ -111,7 +111,7 @@ const api = {
       return false;
     }
   },
-  
+
   // Primary lock method - uses the unified handler
   lockVault: async () => {
     try {
@@ -122,7 +122,7 @@ const api = {
       return false;
     }
   },
-  
+
   // Legacy unlock method (kept for backward compatibility)
   unlockVaultLegacy: async (password) => {
     try {
@@ -132,7 +132,7 @@ const api = {
       throw error;
     }
   },
-  
+
   // Legacy lock method
   lockVaultLegacy: async () => {
     try {
@@ -143,7 +143,7 @@ const api = {
       throw error;
     }
   },
-  
+
   // Legacy isUnlocked method
   isUnlockedLegacy: async () => {
     try {
@@ -164,7 +164,7 @@ const api = {
       throw error;
     }
   },
-  
+
   // ===================== CHANGE PASSWORD =====================
   changePassword: async (currentPassword, newPassword) => {
     try {
@@ -176,7 +176,26 @@ const api = {
       return { success: false, error: error.message };
     }
   },
-  
+
+  // ===================== BROWSER EXTENSION PAIRING =====================
+  generatePairingCode: async () => {
+    try {
+      return await ipcRenderer.invoke('generate-pairing-code');
+    } catch (error) {
+      console.error('[API] generatePairingCode error:', error);
+      return { secret: null };
+    }
+  },
+
+  verifyPairingCode: async (secret) => {
+    try {
+      return await ipcRenderer.invoke('verify-pairing-code', secret);
+    } catch (error) {
+      console.error('[API] verifyPairingCode error:', error);
+      return { valid: false };
+    }
+  },
+
   // ===================== PASSKEY METHODS =====================
   getPasskeys: async () => {
     try {
@@ -204,7 +223,7 @@ const api = {
       return { success: false, error: error.message };
     }
   },
-  
+
   // ===================== BIOMETRIC =====================
   biometric: {
     isAvailable: async () => {
@@ -216,7 +235,7 @@ const api = {
         return false;
       }
     },
-    
+
     isEnabled: async () => {
       try {
         return await ipcRenderer.invoke('biometric:isEnabled');
@@ -225,7 +244,7 @@ const api = {
         return false;
       }
     },
-    
+
     enable: async () => {
       try {
         return await ipcRenderer.invoke('biometric:enable');
@@ -234,7 +253,7 @@ const api = {
         return false;
       }
     },
-    
+
     disable: async () => {
       try {
         return await ipcRenderer.invoke('biometric:disable');
@@ -243,7 +262,7 @@ const api = {
         return false;
       }
     },
-    
+
     unlock: async () => {
       try {
         return await ipcRenderer.invoke('biometric:unlock');
@@ -253,7 +272,7 @@ const api = {
       }
     }
   },
-  
+
   // ===================== SYNC =====================
   sync: {
     push: async () => {
@@ -264,7 +283,7 @@ const api = {
         return { success: false, error: 'Sync feature coming soon' };
       }
     },
-    
+
     pull: async () => {
       try {
         return await ipcRenderer.invoke('sync:pull');
@@ -273,7 +292,7 @@ const api = {
         return { success: false, error: 'Sync feature coming soon' };
       }
     },
-    
+
     getCID: async () => {
       try {
         const result = await ipcRenderer.invoke('sync:getCID');
@@ -284,7 +303,7 @@ const api = {
       }
     }
   },
-  
+
   // ===================== SETTINGS =====================
   settings: {
     getAutoSync: async () => {
@@ -295,7 +314,7 @@ const api = {
         return false;
       }
     },
-    
+
     setAutoSync: async (enabled) => {
       try {
         return await ipcRenderer.invoke('settings:setAutoSync', enabled);
@@ -305,7 +324,7 @@ const api = {
       }
     }
   },
-  
+
   // ===================== VAULT STATUS LISTENERS =====================
   // Register a callback for vault status changes
   // IMPORTANT: This callback is ADDED to the global Set, NOT removed
@@ -319,7 +338,7 @@ const api = {
       console.error('[API] onVaultStatusChange: callback must be a function');
     }
   },
-  
+
   // Legacy status listener (for backward compatibility with existing code)
   onVaultStatusChangeLegacy: (callback) => {
     if (typeof callback === 'function') {

@@ -1,5 +1,7 @@
 // ===================== CORE IMPORTS =====================
 import { app, BrowserWindow, ipcMain } from 'electron';
+import { broadcastVaultStatus } from './server.js';
+
 
 // ===================== CRITICAL POLYFILL (MUST BE FIRST) =====================
 if (typeof globalThis.File === 'undefined') {
@@ -16,7 +18,7 @@ import express from 'express';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import { WebSocketServer } from 'ws';
-import { randomBytes } from 'crypto';
+import crypto from 'crypto';
 
 const require = createRequire(import.meta.url);
 
@@ -62,6 +64,23 @@ async function loadSyncEngine() {
   }
 }
 
+// ===================== 🆕 CHROME EXTENSION SYNC =====================
+// Import store.js functions for Chrome extension sync
+let setExtensionSyncEnabled, manualSyncToExtension, getExtensionSyncStatus;
+
+async function loadExtensionSync() {
+  try {
+    // Dynamic import for store.js
+    const storeModule = await import('./lib/store.js');
+    setExtensionSyncEnabled = storeModule.setExtensionSyncEnabled;
+    manualSyncToExtension = storeModule.manualSyncToExtension;
+    getExtensionSyncStatus = storeModule.getExtensionSyncStatus;
+    console.log('[Extension Sync] Loaded successfully');
+  } catch (error) {
+    console.error('[Extension Sync] Failed to load store.js:', error);
+  }
+}
+
 // ===================== GLOBAL STATE =====================
 let mainWindow;
 let server;
@@ -69,6 +88,51 @@ let db;
 let wsServer;
 let vaultUnlocked = false;
 let masterKey = null;
+let extensionSyncInitialized = false; // 🆕 Track sync initialization
+
+// ===================== PAIRING SECRETS STORE =====================
+const pairingSecrets = new Map();
+
+// ===================== WEBSOCKET SERVER (DISABLED - USING HTTP INSTEAD) =====================
+// WebSocket server code has been removed in favor of HTTP API endpoints
+
+// ===================== 🆕 INITIALIZE EXTENSION SYNC =====================
+async function initializeExtensionSync() {
+  if (extensionSyncInitialized) {
+    console.log('[Extension Sync] Already initialized');
+    return true;
+  }
+
+  try {
+    // Load the extension sync module
+    await loadExtensionSync();
+
+    if (setExtensionSyncEnabled && manualSyncToExtension) {
+      // Enable extension sync
+      await setExtensionSyncEnabled(true);
+      console.log('[Extension Sync] Enabled');
+
+      // Perform initial sync to Chrome extension
+      const syncResult = await manualSyncToExtension();
+      console.log('[Extension Sync] Initial sync result:', syncResult);
+
+      // Check sync status
+      if (getExtensionSyncStatus) {
+        const status = await getExtensionSyncStatus();
+        console.log('[Extension Sync] Status:', status);
+      }
+
+      extensionSyncInitialized = true;
+      return true;
+    } else {
+      console.warn('[Extension Sync] Functions not available');
+      return false;
+    }
+  } catch (error) {
+    console.error('[Extension Sync] Initialization failed:', error);
+    return false;
+  }
+}
 
 // ===================== DATABASE =====================
 function getDatabasePath() {
@@ -90,6 +154,24 @@ async function getDatabase() {
 
   await db.exec('PRAGMA foreign_keys = ON');
   return db;
+}
+
+// After getDatabase function is defined, register it with server.js
+import { setDatabaseGetter } from './server.js';
+
+// Then after the getDatabase function definition, add:
+setDatabaseGetter(getDatabase);
+
+// ===================== 🆕 SYNC TO EXTENSION ON VAULT CHANGES =====================
+async function syncToExtensionOnChange() {
+  try {
+    if (extensionSyncInitialized && manualSyncToExtension) {
+      await manualSyncToExtension();
+      console.log('[Extension Sync] Synced after vault change');
+    }
+  } catch (error) {
+    console.error('[Extension Sync] Failed to sync on change:', error);
+  }
 }
 
 // ===================== BROADCAST VAULT STATE TO ALL WINDOWS =====================
@@ -136,9 +218,48 @@ function createWindow(url) {
   });
 }
 
-// ===================== SERVER (PRODUCTION) =====================
+// ===================== SERVER WITH API ENDPOINTS (PRODUCTION) =====================
 function startStaticServer(outPath) {
   const expressApp = express();
+  
+  // 🔥 ADD JSON PARSING AND CORS
+  expressApp.use(express.json());
+  
+  // Enable CORS for extension
+  expressApp.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+    next();
+  });
+  
+  // ===================== API ENDPOINTS FOR EXTENSION =====================
+  
+  // API endpoint for credentials
+  expressApp.get('/api/credentials', async (req, res) => {
+    try {
+      const database = await getDatabase();
+      const entries = await database.all('SELECT * FROM vault_entries ORDER BY created_at DESC');
+      res.json(entries || []);
+    } catch (err) {
+      console.error('[API] Error fetching credentials:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+  
+  // API endpoint for status
+  expressApp.get('/api/status', async (req, res) => {
+    res.json({ unlocked: vaultUnlocked, timestamp: Date.now() });
+  });
+  
+  // API endpoint for pairing (if needed)
+  expressApp.post('/api/pair', async (req, res) => {
+    const { code } = req.body;
+    console.log('[API] Pairing request received with code:', code);
+    // Verify pairing code logic here
+    res.json({ success: true, message: 'Pairing successful' });
+  });
+  
+  // ===================== STATIC FILE SERVING =====================
   expressApp.use(express.static(outPath));
 
   expressApp.get('*', (req, res) => {
@@ -151,9 +272,12 @@ function startStaticServer(outPath) {
     res.sendFile(indexPath);
   });
 
-  server = expressApp.listen(0, () => {
-    const port = server.address().port;
-    createWindow(`http://localhost:${port}`);
+  // 🔥 USE A FIXED PORT - NOT RANDOM
+  const FIXED_PORT = 3456;
+  server = expressApp.listen(FIXED_PORT, () => {
+    console.log(`[Server] HTTP server running on http://localhost:${FIXED_PORT}`);
+    console.log(`[Server] API endpoints available at http://localhost:${FIXED_PORT}/api/`);
+    createWindow(`http://localhost:${FIXED_PORT}`);
   });
 }
 
@@ -163,12 +287,18 @@ app.whenReady().then(async () => {
     await getDatabase();
     await loadSyncEngine();
 
+    // 🆕 Initialize Chrome Extension Sync
+    await initializeExtensionSync();
+
     const outPath = path.join(__dirname, '../../out');
 
     if (app.isPackaged) {
       startStaticServer(outPath);
     } else {
+      // In development, we need to know the port from Next.js
+      // The user should run Next.js on port 3000 separately
       createWindow('http://localhost:3000');
+      console.log('[Main] Development mode - expecting Next.js on port 3000');
     }
 
   } catch (error) {
@@ -346,10 +476,12 @@ ipcMain.handle('vault:saveEntry', async (event, entry) => {
           safeEntry.totpSecret, safeEntry.passkeyId, now, safeEntry.id
         ]
       );
+      // 🆕 Sync to extension after update
+      await syncToExtensionOnChange();
       return { ...safeEntry, updatedAt: now };
     }
 
-    const id = randomBytes(16).toString('hex');
+    const id = crypto.randomBytes(16).toString('hex');
     await db.run(
       `INSERT INTO vault_entries (
         id, title, username, password, url, notes, category, totpSecret, passkeyId, created_at, updated_at
@@ -360,6 +492,9 @@ ipcMain.handle('vault:saveEntry', async (event, entry) => {
         safeEntry.totpSecret, safeEntry.passkeyId, now, now
       ]
     );
+
+    // 🆕 Sync to extension after insert
+    await syncToExtensionOnChange();
 
     return { ...safeEntry, id, createdAt: now, updatedAt: now };
   } catch (error) {
@@ -375,6 +510,8 @@ ipcMain.handle('vault:deleteEntry', async (event, id) => {
   try {
     const db = await getDatabase();
     await db.run(`DELETE FROM vault_entries WHERE id = ?`, [id]);
+    // 🆕 Sync to extension after delete
+    await syncToExtensionOnChange();
     return { success: true };
   } catch (error) {
     console.error('[vault:deleteEntry] Error:', error);
@@ -408,6 +545,9 @@ ipcMain.handle('unlock-vault', async (event, password) => {
       vaultUnlocked = true;
       masterKey = result.key;
 
+      // 🔥 ADD THIS - Broadcast to extension
+      broadcastVaultStatus(true);
+
       // Notify ALL renderer windows
       BrowserWindow.getAllWindows().forEach((win) => {
         if (win && !win.isDestroyed()) {
@@ -415,7 +555,10 @@ ipcMain.handle('unlock-vault', async (event, password) => {
         }
       });
       broadcastVaultState();
-      
+
+      // 🆕 Sync to extension after unlock
+      await syncToExtensionOnChange();
+
       console.log('[Main] Vault unlocked via unlock-vault');
     }
 
@@ -437,6 +580,9 @@ ipcMain.handle('lock-vault', async () => {
     await lockVault();
     vaultUnlocked = false;
     masterKey = null;
+
+    // 🔥 ADD THIS - Broadcast to extension
+    broadcastVaultStatus(false);
 
     // Notify ALL renderer windows
     BrowserWindow.getAllWindows().forEach((win) => {
@@ -461,8 +607,14 @@ ipcMain.handle('vault:unlock', async (event, masterPassword) => {
     if (result.success) {
       vaultUnlocked = true;
       masterKey = result.key;
+      
+      // 🔥 ADD THIS - Broadcast to extension
+      broadcastVaultStatus(true);
+      
       broadcastVaultState();
       broadcastVaultStateToAllWindows();
+      // 🆕 Sync to extension after unlock
+      await syncToExtensionOnChange();
     }
     return result;
   } catch (error) {
@@ -477,6 +629,10 @@ ipcMain.handle('vault:lock', async () => {
     await lockVault();
     vaultUnlocked = false;
     masterKey = null;
+    
+    // 🔥 ADD THIS - Broadcast to extension
+    broadcastVaultStatus(false);
+    
     broadcastVaultState();
     broadcastVaultStateToAllWindows();
     return { success: true };
@@ -505,10 +661,40 @@ ipcMain.handle('vault:saveEntries', async (event, entries) => {
 
   try {
     await saveVaultEntries(entries);
+    // 🆕 Sync to extension after bulk save
+    await syncToExtensionOnChange();
     return { success: true };
   } catch (error) {
     console.error('[vault:saveEntries] Error:', error);
     throw error;
+  }
+});
+
+// 🆕 Manual sync trigger for extension
+ipcMain.handle('extension:sync', async () => {
+  try {
+    if (manualSyncToExtension) {
+      const result = await manualSyncToExtension();
+      return { success: result, message: result ? 'Sync successful' : 'Sync failed' };
+    }
+    return { success: false, message: 'Extension sync not available' };
+  } catch (error) {
+    console.error('[extension:sync] Error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// 🆕 Get extension sync status
+ipcMain.handle('extension:status', async () => {
+  try {
+    if (getExtensionSyncStatus) {
+      const status = await getExtensionSyncStatus();
+      return status;
+    }
+    return { enabled: false, hasChromeAPI: false };
+  } catch (error) {
+    console.error('[extension:status] Error:', error);
+    return { enabled: false, error: error.message };
   }
 });
 
@@ -656,11 +842,42 @@ ipcMain.handle('vault:changePassword', async (event, currentPassword, newPasswor
       await saveVaultEntries([entry]);
     }
 
+    // 🆕 Sync to extension after password change
+    await syncToExtensionOnChange();
+
     return { success: true };
   } catch (error) {
     console.error('[vault:changePassword] Error:', error);
     return { success: false, error: error.message };
   }
+});
+
+// ===================== PAIRING CODE HANDLERS =====================
+
+ipcMain.handle('generate-pairing-code', async () => {
+  const secret = crypto.randomBytes(32).toString('hex');
+  pairingSecrets.set(secret, { createdAt: Date.now() });
+
+  // Auto-expire after 5 minutes
+  setTimeout(() => {
+    if (pairingSecrets.has(secret)) {
+      pairingSecrets.delete(secret);
+    }
+  }, 5 * 60 * 1000);
+
+  console.log('[Pairing] Generated new pairing code:', secret.substring(0, 16) + '...');
+  return { secret };
+});
+
+ipcMain.handle('verify-pairing-code', async (event, secret) => {
+  const isValid = pairingSecrets.has(secret);
+  if (isValid) {
+    pairingSecrets.delete(secret);
+    console.log('[Pairing] Code verified and consumed');
+  } else {
+    console.log('[Pairing] Invalid or expired code attempted');
+  }
+  return { valid: isValid };
 });
 
 // ===================== LIFECYCLE =====================
@@ -679,7 +896,6 @@ app.on('window-all-closed', () => {
 app.on('before-quit', async () => {
   try {
     server?.close?.();
-    wsServer?.close?.();
     if (db) {
       await db.close();
       db = null;

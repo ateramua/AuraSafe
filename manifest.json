@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "AuraSafe Password Manager",
+  "short_name": "AuraSafe",
+  "version": "1.0.0",
+  "description": "Secure password manager",
+  "permissions": ["activeTab", "storage", "clipboardWrite", "clipboardRead", "tabs"],
+  "host_permissions": ["http://localhost:8765/*", "ws://localhost:8765/*", "http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "AuraSafe"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["popup.html", "popup.js", "styles.css", "content.js", "background.js", "pairing.html", "pairing.js"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "options_page": "options.html",
+  "incognito": "split",  "offline_enabled": true
+}

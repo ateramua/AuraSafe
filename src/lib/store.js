@@ -1,6 +1,6 @@
 // src/lib/store.js
 // AuraSafe Local Storage Manager - IndexedDB caching layer
-// Version: 1.0.0
+// Version: 1.2.0 - WebSocket sync ready
 
 // ===================== IMPORTS =====================
 
@@ -35,6 +35,67 @@ let cache = null;
 let cacheTimestamp = null;
 let syncInProgress = false;
 let pendingWrites = new Map();
+
+// ===================== WEBSOCKET SYNC =====================
+let wsConnection = null;
+let wsReconnectTimer = null;
+
+/**
+ * Connect to WebSocket for extension sync
+ * @returns {Promise<WebSocket>}
+ */
+export async function connectWebSocket() {
+  return new Promise((resolve, reject) => {
+    try {
+      // Connect to the WebSocket server running in main process
+      wsConnection = new WebSocket('ws://localhost:8765');
+      
+      wsConnection.onopen = () => {
+        console.log('[Store] WebSocket connected for extension sync');
+        resolve(wsConnection);
+      };
+      
+      wsConnection.onerror = (error) => {
+        console.error('[Store] WebSocket error:', error);
+        reject(error);
+      };
+      
+      wsConnection.onclose = () => {
+        console.log('[Store] WebSocket disconnected, reconnecting in 5s');
+        setTimeout(() => connectWebSocket().catch(() => {}), 5000);
+      };
+      
+    } catch (error) {
+      console.error('[Store] Failed to create WebSocket:', error);
+      reject(error);
+    }
+  });
+}
+
+/**
+ * Sync credentials to extension via WebSocket
+ * @param {Array} entries - Entries to sync
+ */
+export async function syncToExtensionViaWebSocket(entries) {
+  try {
+    if (!wsConnection || wsConnection.readyState !== WebSocket.OPEN) {
+      await connectWebSocket();
+    }
+    
+    if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+      const message = JSON.stringify({
+        type: 'credentials',
+        payload: entries || []
+      });
+      wsConnection.send(message);
+      console.log(`[Store] Sent ${entries?.length || 0} credentials to extension via WebSocket`);
+      return true;
+    }
+  } catch (error) {
+    console.error('[Store] Failed to sync via WebSocket:', error);
+    return false;
+  }
+}
 
 // ===================== DATABASE INITIALIZATION =====================
 
@@ -76,7 +137,6 @@ async function getDB() {
         
         // Handle upgrades from older versions
         if (oldVersion < 2) {
-          // Add any migration logic here
           console.log('[Store] Migrating data to version 2');
         }
       },
@@ -84,6 +144,9 @@ async function getDB() {
     
     // Initialize metadata if needed
     await initMetadata();
+    
+    // Connect WebSocket for extension sync
+    await connectWebSocket().catch(() => console.log('[Store] WebSocket connection pending'));
     
     console.log('[Store] Database initialized successfully');
     return db;
@@ -219,6 +282,10 @@ async function saveToIndexedDB(entries) {
     
     await tx.done;
     console.log(`[Store] Saved ${entries.length} entries to IndexedDB`);
+    
+    // Auto-sync to extension via WebSocket
+    await syncToExtensionViaWebSocket(entries);
+    
   } catch (error) {
     console.error('[Store] Failed to save to IndexedDB:', error);
     throw error;
@@ -372,7 +439,7 @@ export async function addEntry(entry) {
     const currentCache = cache || [];
     await updateCache([...currentCache, saved]);
     
-    // Update IndexedDB
+    // Update IndexedDB (handles WebSocket sync)
     await saveToIndexedDB([...currentCache, saved]);
     
     console.log(`[Store] Added entry: ${saved.id}`);
@@ -397,10 +464,11 @@ export async function updateEntry(id, entry) {
     
     // Update cache
     const currentCache = cache || [];
-    await updateCache(currentCache.map(e => (e.id === id ? saved : e)));
+    const updatedCache = currentCache.map(e => (e.id === id ? saved : e));
+    await updateCache(updatedCache);
     
-    // Update IndexedDB
-    await saveToIndexedDB(currentCache.map(e => (e.id === id ? saved : e)));
+    // Update IndexedDB (handles WebSocket sync)
+    await saveToIndexedDB(updatedCache);
     
     console.log(`[Store] Updated entry: ${id}`);
     return saved;
@@ -423,10 +491,11 @@ export async function deleteEntry(id) {
     
     // Update cache
     const currentCache = cache || [];
-    await updateCache(currentCache.filter(e => e.id !== id));
+    const updatedCache = currentCache.filter(e => e.id !== id);
+    await updateCache(updatedCache);
     
-    // Update IndexedDB
-    await saveToIndexedDB(currentCache.filter(e => e.id !== id));
+    // Update IndexedDB (handles WebSocket sync)
+    await saveToIndexedDB(updatedCache);
     
     console.log(`[Store] Deleted entry: ${id}`);
   } catch (error) {
@@ -535,6 +604,27 @@ export async function forceSync() {
   return syncVault();
 }
 
+/**
+ * Manually sync to extension via WebSocket
+ * @returns {Promise<boolean>}
+ */
+export async function manualSyncToExtension() {
+  console.log('[Store] Manual extension sync triggered');
+  const entries = await loadFromIndexedDB();
+  return await syncToExtensionViaWebSocket(entries);
+}
+
+/**
+ * Get WebSocket connection status
+ * @returns {Promise<Object>}
+ */
+export async function getWebSocketStatus() {
+  return {
+    connected: wsConnection && wsConnection.readyState === WebSocket.OPEN,
+    readyState: wsConnection ? wsConnection.readyState : null
+  };
+}
+
 // ===================== EXPORTS =====================
 
 export default {
@@ -550,4 +640,9 @@ export default {
   queryEntriesByType,
   searchEntries,
   getEntryFromIndexedDB,
+  // WebSocket sync exports
+  connectWebSocket,
+  syncToExtensionViaWebSocket,
+  manualSyncToExtension,
+  getWebSocketStatus,
 };

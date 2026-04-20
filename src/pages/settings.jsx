@@ -13,6 +13,9 @@ import {
   getAutoSync,
   setAutoSync,
   changePassword,
+  generatePairingCode,
+  verifyPairingCode,
+  lockVault,
 } from '../lib/api-client';
 import { loadVault, getVaultStats, clearLocalData } from '../lib/store';
 
@@ -45,10 +48,53 @@ export default function SettingsPage() {
   const [weakPasswords, setWeakPasswords] = useState(0);
   const [reusedPasswords, setReusedPasswords] = useState(0);
   const [totalSize, setTotalSize] = useState(0);
+  
+  // Pairing code state
+  const [pairingCode, setPairingCode] = useState('');
+  const [showPairingCode, setShowPairingCode] = useState(false);
+  const [pairingCodeExpiry, setPairingCodeExpiry] = useState(null);
 
   const showToast = (message, type = 'success') => {
     setToast({ show: true, message, type });
     setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 4000);
+  };
+
+  // Generate Pairing Code Handler
+  const handleGeneratePairingCode = async () => {
+    console.log('[Settings] Generate pairing code clicked');
+    try {
+      const result = await generatePairingCode();
+      console.log('[Settings] Pairing code result:', result);
+      if (result && result.secret) {
+        setPairingCode(result.secret);
+        setShowPairingCode(true);
+        setPairingCodeExpiry(Date.now() + 5 * 60 * 1000);
+        showToast('Pairing code generated! Valid for 5 minutes.', 'success');
+        
+        // Auto-hide after 5 minutes
+        setTimeout(() => {
+          if (showPairingCode) {
+            setShowPairingCode(false);
+            setPairingCode('');
+            showToast('Pairing code expired. Generate a new one.', 'info');
+          }
+        }, 5 * 60 * 1000);
+      } else {
+        showToast('Failed to generate pairing code', 'error');
+      }
+    } catch (err) {
+      console.error('[Settings] Generate pairing code error:', err);
+      showToast('Failed to generate pairing code: ' + err.message, 'error');
+    }
+  };
+
+  const handleCopyPairingCode = async () => {
+    try {
+      await navigator.clipboard.writeText(pairingCode);
+      showToast('Pairing code copied to clipboard!', 'success');
+    } catch (err) {
+      showToast('Failed to copy', 'error');
+    }
   };
 
   // Load settings from storage
@@ -256,11 +302,11 @@ export default function SettingsPage() {
       const text = await file.text();
       const importedData = JSON.parse(text);
       const entries = Array.isArray(importedData) ? importedData : importedData.entries || [];
-      
+
       for (const entry of entries) {
         await window.api.saveVaultEntry(entry);
       }
-      
+
       showToast(`Imported ${entries.length} entries successfully`, 'success');
       const vaultData = await loadVault();
       setEntries(Array.isArray(vaultData) ? vaultData : vaultData?.entries || []);
@@ -304,7 +350,7 @@ export default function SettingsPage() {
       if (/[A-Z]/.test(password)) score++;
       if (/[0-9]/.test(password)) score++;
       if (/[^A-Za-z0-9]/.test(password)) score++;
-      
+
       const percent = Math.min(score * 20, 100);
       let label = 'Weak';
       let color = '#ef4444';
@@ -563,6 +609,39 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+          
+          {/* Browser Extension Pairing Section */}
+          <div style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <span style={styles.sectionIcon}>🌐</span>
+              <h3>Browser Extension</h3>
+            </div>
+            <p style={styles.sectionDesc}>
+              Generate a pairing code to connect your browser extension to this desktop app.
+            </p>
+
+            {!showPairingCode ? (
+              <button onClick={handleGeneratePairingCode} style={styles.primaryButton}>
+                🔗 Generate Pairing Code
+              </button>
+            ) : (
+              <div style={styles.pairingCodeContainer}>
+                <div style={styles.pairingCodeLabel}>Your Pairing Code (valid for 5 minutes):</div>
+                <code style={styles.pairingCode}>{pairingCode}</code>
+                <div style={styles.pairingCodeActions}>
+                  <button onClick={handleCopyPairingCode} style={styles.secondaryButton}>
+                    📋 Copy Code
+                  </button>
+                  <button onClick={() => setShowPairingCode(false)} style={styles.secondaryButton}>
+                    Hide
+                  </button>
+                </div>
+                <div style={styles.pairingCodeHint}>
+                  ⏰ Paste this code in the browser extension to pair.
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Sync Section */}
           <div style={styles.section}>
@@ -713,6 +792,38 @@ const styles = {
     padding: '3rem',
     textAlign: 'center',
     color: '#fff',
+  },
+  pairingCodeContainer: {
+    background: 'rgba(0, 0, 0, 0.3)',
+    padding: '1rem',
+    borderRadius: '0.75rem',
+    textAlign: 'center',
+  },
+  pairingCodeLabel: {
+    fontSize: '0.75rem',
+    color: '#9CA3AF',
+    marginBottom: '0.5rem',
+  },
+  pairingCode: {
+    display: 'block',
+    fontFamily: 'monospace',
+    fontSize: '1rem',
+    letterSpacing: '2px',
+    background: '#111827',
+    padding: '0.75rem',
+    borderRadius: '0.5rem',
+    marginBottom: '0.75rem',
+    wordBreak: 'break-all',
+  },
+  pairingCodeActions: {
+    display: 'flex',
+    gap: '0.75rem',
+    justifyContent: 'center',
+    marginBottom: '0.75rem',
+  },
+  pairingCodeHint: {
+    fontSize: '0.7rem',
+    color: '#f59e0b',
   },
   spinner: {
     width: '40px',
