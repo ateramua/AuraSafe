@@ -1,25 +1,13 @@
-// ===================== BACKGROUND SERVICE WORKER =====================
-// AuraSafe Browser Extension - HTTP Polling (LastPass Style)
-// Firefox Compatible Version
-// Version: 2.0.1
+// ===================== BACKGROUND SCRIPT =====================
+// AuraSafe Browser Extension - HTTP Polling (Firefox Compatible)
+// Version: 2.0.0 - Firefox WebExtension
 
 const CONFIG = {
-  DESKTOP_URL: 'http://localhost:3456',  // ← Fixed port
+  DESKTOP_URL: 'http://localhost:3456',  // Fixed port
   POLL_INTERVAL_MS: 3000,
 };
 
 let pollingInterval = null;
-
-// ===================== FIREFOX COMPATIBILITY =====================
-// Firefox uses 'browser' namespace primarily, but supports 'chrome' as alias
-// We'll use 'chrome' for maximum compatibility, but add fallback
-const storage = typeof chrome !== 'undefined' && chrome.storage 
-  ? chrome.storage 
-  : browser.storage;
-
-const runtime = typeof chrome !== 'undefined' && chrome.runtime
-  ? chrome.runtime
-  : browser.runtime;
 
 // ===================== LOGGING =====================
 function log(level, message, data = null) {
@@ -35,17 +23,16 @@ async function fetchCredentials() {
     const response = await fetch(`${CONFIG.DESKTOP_URL}/api/credentials`);
     if (response.ok) {
       const credentials = await response.json();
-      // Save to storage for popup to read (Firefox compatible)
-      await storage.local.set({ aurasafe_credentials: credentials });
+      // Save to browser.storage.local for popup to read (Firefox uses browser.storage)
+      await browser.storage.local.set({ aurasafe_credentials: credentials });
       log('info', `Fetched ${credentials.length} credentials`);
       
-      // Notify popup if open - Firefox handles this the same way
-      runtime.sendMessage({ type: 'CREDENTIALS_UPDATED', payload: credentials }).catch(() => {});
+      // Notify popup if open (Firefox uses browser.runtime)
+      browser.runtime.sendMessage({ type: 'CREDENTIALS_UPDATED', payload: credentials }).catch(() => {});
       return credentials;
     }
   } catch (err) {
     // Desktop not running - silent fail
-    log('debug', `Desktop connection failed: ${err.message}`);
   }
   return [];
 }
@@ -56,17 +43,16 @@ async function fetchStatus() {
     const response = await fetch(`${CONFIG.DESKTOP_URL}/api/status`);
     if (response.ok) {
       const status = await response.json();
-      // Save to storage for popup to read
-      await storage.local.set({ aurasafe_vault_status: status });
+      // Save to browser.storage.local for popup to read
+      await browser.storage.local.set({ aurasafe_vault_status: status });
       log('info', `Vault status: ${status.unlocked ? 'Unlocked' : 'Locked'}`);
       
       // Notify popup if open
-      runtime.sendMessage({ type: 'VAULT_STATUS_CHANGED', payload: status }).catch(() => {});
+      browser.runtime.sendMessage({ type: 'VAULT_STATUS_CHANGED', payload: status }).catch(() => {});
       return status;
     }
   } catch (err) {
     // Silent fail
-    log('debug', `Status fetch failed: ${err.message}`);
   }
   return null;
 }
@@ -77,24 +63,15 @@ async function discoverDesktopPort() {
   const ports = [3456, 3000, 3001, 3002, 8080];
   for (const port of ports) {
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 1000); // 1s timeout per port
-      
-      const response = await fetch(`http://localhost:${port}/api/status`, {
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-      
+      const response = await fetch(`http://localhost:${port}/api/status`);
       if (response.ok) {
         CONFIG.DESKTOP_URL = `http://localhost:${port}`;
         log('info', `Desktop found on port ${port}`);
         return true;
       }
-    } catch (e) {
-      // Continue to next port
-    }
+    } catch (e) {}
   }
-  log('warn', 'Could not discover desktop app on any port');
+  log('warn', 'Desktop app not found - will retry on next poll');
   return false;
 }
 
@@ -119,8 +96,9 @@ async function startPolling() {
 }
 
 // ===================== HANDLE POPUP MESSAGES =====================
-// Firefox uses the same onMessage API, but returns promises differently
-runtime.onMessage.addListener((message, sender, sendResponse) => {
+// Firefox uses browser.runtime.onMessage
+browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Handle async responses
   if (message.type === 'GET_CREDENTIALS_FROM_DESKTOP') {
     fetchCredentials().then(credentials => {
       sendResponse({ success: true, credentials });
@@ -147,46 +125,27 @@ runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.type === 'LOCK_VAULT') {
-    storage.local.remove(['aurasafe_credentials']);
-    storage.local.set({ aurasafe_vault_status: { unlocked: false } });
+    browser.storage.local.remove(['aurasafe_credentials']);
+    browser.storage.local.set({ aurasafe_vault_status: { unlocked: false } });
     sendResponse({ success: true });
     return true;
   }
   
-  if (message.type === 'OPEN_SETTINGS') {
-    // send signal to desktop app (via your existing bridge)
-    log('info', 'Open settings requested');
-    sendResponse({ success: true });
-    return true;
-  }
-  
-  // Return true for any message that might have an async response
-  return true;
+  // Return false for sync responses (no async work)
+  return false;
 });
 
 // ===================== LIFECYCLE =====================
-// Firefox uses onInstalled (same as Chrome)
-runtime.onInstalled.addListener((details) => {
-  log('info', `Extension ${details.reason} - starting polling`);
+// Firefox uses browser.runtime.onInstalled
+browser.runtime.onInstalled.addListener(() => {
+  log('info', 'Extension installed - starting polling');
   startPolling();
 });
 
-// Firefox supports onStartup (same as Chrome)
-runtime.onStartup.addListener(() => {
+// Firefox uses browser.runtime.onStartup
+browser.runtime.onStartup.addListener(() => {
   log('info', 'Browser startup - starting polling');
   startPolling();
 });
-
-// Firefox also supports suspend events for background scripts
-// Optional: Add cleanup on suspend
-if (typeof runtime.onSuspend !== 'undefined') {
-  runtime.onSuspend.addListener(() => {
-    log('info', 'Background worker suspending - cleaning up');
-    if (pollingInterval) {
-      clearInterval(pollingInterval);
-      pollingInterval = null;
-    }
-  });
-}
 
 log('info', 'Background worker initialized (Firefox compatible)');

@@ -1,58 +1,6 @@
 // ===================== CONTENT SCRIPT =====================
 // AuraSafe Password Manager - Auto-fill & Form Detection
-// Firefox Compatible Version
-// Version: 1.1.0
-
-// ===================== FIREFOX COMPATIBILITY =====================
-// Firefox uses 'browser' namespace, but also supports 'chrome' as an alias
-// We'll use a unified approach with fallbacks
-const extensionAPI = (function() {
-  // Try to detect Firefox
-  const isFirefox = typeof InstallTrigger !== 'undefined' || 
-                    navigator.userAgent.includes('Firefox');
-  
-  // Use browser API if available (Firefox), fallback to chrome
-  if (typeof browser !== 'undefined' && browser.runtime) {
-    return browser;
-  } else if (typeof chrome !== 'undefined' && chrome.runtime) {
-    return chrome;
-  }
-  
-  // Fallback mock (should not happen in extension context)
-  console.warn('[AuraSafe] No extension API found');
-  return {
-    runtime: { sendMessage: () => Promise.reject('No API'), onMessage: { addListener: () => {} } }
-  };
-})();
-
-// Helper for sending messages that works across both browsers
-async function sendExtensionMessage(message) {
-  try {
-    // Firefox's browser.runtime.sendMessage returns a Promise
-    // Chrome's chrome.runtime.sendMessage uses callbacks
-    if (typeof extensionAPI.runtime.sendMessage === 'function') {
-      // Check if it returns a Promise (Firefox style)
-      const result = extensionAPI.runtime.sendMessage(message);
-      if (result && typeof result.then === 'function') {
-        return await result;
-      } else {
-        // Chrome style with callback
-        return new Promise((resolve, reject) => {
-          extensionAPI.runtime.sendMessage(message, (response) => {
-            if (extensionAPI.runtime.lastError) {
-              reject(extensionAPI.runtime.lastError);
-            } else {
-              resolve(response);
-            }
-          });
-        });
-      }
-    }
-  } catch (error) {
-    // Silent fail - extension background might not be ready
-    return null;
-  }
-}
+// Version: 1.0.0
 
 // ===================== CONFIGURATION =====================
 const CONFIG = {
@@ -96,6 +44,10 @@ const CONFIG = {
   SUBMIT_SELECTORS: [
     'input[type="submit"]',
     'button[type="submit"]',
+    'button:contains("Sign in")',
+    'button:contains("Login")',
+    'button:contains("Log in")',
+    'button:contains("Sign in")',
     'form button',
     'form input[type="submit"]'
   ],
@@ -104,7 +56,8 @@ const CONFIG = {
   FORM_SELECTORS: [
     'form[action*="login" i]',
     'form[action*="signin" i]',
-    'form[action*="auth" i]'
+    'form[action*="auth" i]',
+    'form:has(input[type="password"])'
   ],
   
   // Debounce delay (ms)
@@ -118,8 +71,6 @@ const CONFIG = {
     attributeFilter: ['class', 'style', 'type']
   }
 };
-
-// Note: Firefox doesn't support :contains() in querySelector, so we removed those selectors
 
 // ===================== STATE MANAGEMENT =====================
 let currentForm = null;
@@ -150,30 +101,14 @@ function debounce(func, wait) {
 }
 
 /**
- * Check if element is visible (Firefox compatible)
- */
-function isElementVisible(element) {
-  if (!element) return false;
-  const rect = element.getBoundingClientRect();
-  const style = window.getComputedStyle(element);
-  return rect.width > 0 && 
-         rect.height > 0 && 
-         style.display !== 'none' && 
-         style.visibility !== 'hidden' &&
-         style.opacity !== '0';
-}
-
-/**
  * Find element by multiple selectors
  */
 function findElement(selectors, container = document) {
   for (const selector of selectors) {
     try {
-      const elements = container.querySelectorAll(selector);
-      for (const element of elements) {
-        if (isElementVisible(element)) {
-          return element;
-        }
+      const element = container.querySelector(selector);
+      if (element && element.offsetParent !== null) {
+        return element;
       }
     } catch (e) {
       // Invalid selector, continue
@@ -186,38 +121,17 @@ function findElement(selectors, container = document) {
  * Find all matching elements
  */
 function findAllElements(selectors, container = document) {
-  const results = [];
   for (const selector of selectors) {
     try {
       const elements = container.querySelectorAll(selector);
-      for (const element of elements) {
-        if (isElementVisible(element) && !results.includes(element)) {
-          results.push(element);
-        }
+      if (elements.length > 0) {
+        return Array.from(elements).filter(el => el.offsetParent !== null);
       }
     } catch (e) {
       // Invalid selector, continue
     }
   }
-  return results;
-}
-
-/**
- * Find form containing an element
- */
-function findContainingForm(element) {
-  if (!element) return null;
-  
-  // Check if element itself is a form
-  if (element.tagName === 'FORM') return element;
-  
-  // Traverse up the DOM tree
-  let parent = element.parentElement;
-  while (parent) {
-    if (parent.tagName === 'FORM') return parent;
-    parent = parent.parentElement;
-  }
-  return null;
+  return [];
 }
 
 /**
@@ -237,7 +151,7 @@ function detectFormFields() {
   // Find username field
   if (result.password) {
     // Look for username near the password field
-    const form = findContainingForm(result.password);
+    const form = result.password.closest('form');
     if (form) {
       result.form = form;
       // Search for username within the same form
@@ -254,7 +168,7 @@ function detectFormFields() {
   }
   
   if (!result.form && result.username) {
-    result.form = findContainingForm(result.username);
+    result.form = result.username.closest('form');
   }
   
   if (!result.submit && result.form) {
@@ -272,7 +186,7 @@ function updateDetectedFields() {
   detectedFields = fields;
   
   // Notify extension about detected fields
-  sendExtensionMessage({
+  chrome.runtime.sendMessage({
     type: 'FIELDS_DETECTED',
     payload: {
       hasUsername: !!fields.username,
@@ -326,7 +240,7 @@ async function fillCredentials(entry) {
     const settings = await getSettings();
     if (settings.autoSubmit && fields.submit) {
       setTimeout(() => {
-        if (fields.submit) fields.submit.click();
+        fields.submit.click();
       }, 500);
     }
     
@@ -340,42 +254,28 @@ async function fillCredentials(entry) {
 }
 
 /**
- * Set field value and trigger events (Firefox optimized)
+ * Set field value and trigger events
  */
 function setFieldValue(field, value) {
   const originalValue = field.value;
-  
-  // Set value directly
   field.value = value;
   
   // Trigger events to ensure website detects change
-  // Firefox needs both input and change events
-  const inputEvent = new Event('input', { bubbles: true, cancelable: true });
-  const changeEvent = new Event('change', { bubbles: true, cancelable: true });
-  const blurEvent = new Event('blur', { bubbles: true });
-  
-  field.dispatchEvent(inputEvent);
-  field.dispatchEvent(changeEvent);
-  
-  // For React/Vue apps, also try to trigger property change
-  if (originalValue !== value) {
-    // This works better with frameworks in Firefox
-    const nativeSetter = Object.getOwnPropertyDescriptor(
-      window.HTMLInputElement.prototype,
-      'value'
-    )?.set;
-    
-    if (nativeSetter) {
-      nativeSetter.call(field, value);
-      field.dispatchEvent(inputEvent);
-    }
-  }
-  
-  // Focus then blur to trigger validation
   field.dispatchEvent(new Event('focus', { bubbles: true }));
-  setTimeout(() => {
-    field.dispatchEvent(blurEvent);
-  }, 50);
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+  field.dispatchEvent(new Event('change', { bubbles: true }));
+  field.dispatchEvent(new Event('blur', { bubbles: true }));
+  
+  // For React/Vue apps, also trigger property change
+  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype,
+    'value'
+  )?.set;
+  
+  if (nativeInputValueSetter && originalValue !== value) {
+    nativeInputValueSetter.call(field, value);
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  }
 }
 
 /**
@@ -437,7 +337,7 @@ function showFillIndicator(success) {
  * Show notification
  */
 function showNotification(message, type = 'info') {
-  sendExtensionMessage({
+  chrome.runtime.sendMessage({
     type: 'SHOW_NOTIFICATION',
     payload: { message, type }
   }).catch(() => {});
@@ -447,20 +347,19 @@ function showNotification(message, type = 'info') {
  * Get extension settings
  */
 async function getSettings() {
-  try {
-    const response = await sendExtensionMessage({ type: 'GET_SETTINGS' });
-    return response || { autoSubmit: false, autoDetect: true };
-  } catch {
-    return { autoSubmit: false, autoDetect: true };
-  }
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: 'GET_SETTINGS' }, (response) => {
+      resolve(response || { autoSubmit: false, autoDetect: true });
+    }).catch(() => resolve({ autoSubmit: false, autoDetect: true }));
+  });
 }
 
 /**
  * Save new credentials for current site
  */
 async function saveCredentials(username, password) {
-  try {
-    const response = await sendExtensionMessage({
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({
       type: 'SAVE_CREDENTIALS',
       payload: {
         url: pageUrl,
@@ -469,11 +368,10 @@ async function saveCredentials(username, password) {
         username: username,
         password: password
       }
+    }, (response) => {
+      resolve(response);
     });
-    return response;
-  } catch {
-    return null;
-  }
+  });
 }
 
 // ===================== FORM MONITORING =====================
@@ -482,7 +380,6 @@ async function saveCredentials(username, password) {
  * Watch for new forms added to the page
  */
 function watchForForms() {
-  // Firefox handles MutationObserver the same way
   const observer = new MutationObserver(debounce(() => {
     const newFields = detectFormFields();
     if (newFields.password !== detectedFields.password ||
@@ -491,9 +388,7 @@ function watchForForms() {
     }
   }, CONFIG.DEBOUNCE_DELAY));
   
-  if (document.body) {
-    observer.observe(document.body, CONFIG.OBSERVER_CONFIG);
-  }
+  observer.observe(document.body, CONFIG.OBSERVER_CONFIG);
 }
 
 /**
@@ -508,22 +403,13 @@ function monitorFormSubmission() {
     const passwordField = form.querySelector('input[type="password"]');
     if (!passwordField) return;
     
-    // Get username field (text or email input before password)
-    let usernameField = null;
-    const inputs = form.querySelectorAll('input');
-    for (const input of inputs) {
-      if (input.type === 'text' || input.type === 'email') {
-        usernameField = input;
-        break;
-      }
-    }
-    
+    const usernameField = form.querySelector('input[type="text"], input[type="email"]');
     const username = usernameField?.value || '';
     const password = passwordField.value;
     
     if (password) {
       // Notify extension about form submission
-      sendExtensionMessage({
+      chrome.runtime.sendMessage({
         type: 'FORM_SUBMITTED',
         payload: {
           url: pageUrl,
@@ -540,9 +426,9 @@ function monitorFormSubmission() {
 // ===================== MESSAGE HANDLING =====================
 
 /**
- * Handle messages from extension (Firefox compatible)
+ * Handle messages from extension
  */
-extensionAPI.runtime.onMessage.addListener((request, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   const handleAsync = async () => {
     try {
       switch (request.type) {
@@ -587,7 +473,7 @@ extensionAPI.runtime.onMessage.addListener((request, sender, sendResponse) => {
   };
   
   handleAsync();
-  return true; // Keep channel open for async response (required for Firefox)
+  return true; // Keep channel open for async response
 });
 
 // ===================== INITIALIZATION =====================
@@ -606,7 +492,7 @@ function init() {
   monitorFormSubmission();
   
   // Notify extension that content script is ready
-  sendExtensionMessage({
+  chrome.runtime.sendMessage({
     type: 'CONTENT_SCRIPT_READY',
     payload: {
       url: pageUrl,
@@ -631,15 +517,7 @@ style.textContent = `
     }
   }
 `;
-
-// Wait for document head to exist
-if (document.head) {
-  document.head.appendChild(style);
-} else {
-  document.addEventListener('DOMContentLoaded', () => {
-    document.head.appendChild(style);
-  });
-}
+document.head.appendChild(style);
 
 // Start initialization
 if (document.readyState === 'loading') {

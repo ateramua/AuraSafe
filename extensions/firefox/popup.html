@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
-  <title>AuraSafe Password Manager - Firefox Compatible</title>
+  <title>AuraSafe Password Manager</title>
 
   <style>
     /* ===================== RESET & BASE ===================== */
@@ -26,8 +26,7 @@
       overflow-x: hidden;
     }
 
-    /* ===================== FIREFOX SCROLLBAR ===================== */
-    /* WebKit scrollbar */
+    /* ===================== SCROLLBAR ===================== */
     ::-webkit-scrollbar {
       width: 6px;
     }
@@ -44,12 +43,6 @@
 
     ::-webkit-scrollbar-thumb:hover {
       background: rgba(255, 255, 255, 0.5);
-    }
-
-    /* Firefox scrollbar */
-    * {
-      scrollbar-width: thin;
-      scrollbar-color: rgba(255, 255, 255, 0.3) rgba(255, 255, 255, 0.1);
     }
 
     /* ===================== HEADER ===================== */
@@ -73,8 +66,8 @@
       font-size: 20px;
       font-weight: 700;
       background: linear-gradient(135deg, #ffffff, #a5d6a5);
-      background-clip: text;
       -webkit-background-clip: text;
+      background-clip: text;
       color: transparent;
     }
 
@@ -168,12 +161,6 @@
       box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
     }
 
-    /* Firefox focus styling */
-    .search-input:focus-visible {
-      outline: 2px solid #4caf50;
-      outline-offset: 1px;
-    }
-
     .search-input::placeholder {
       color: rgba(255, 255, 255, 0.5);
     }
@@ -201,11 +188,6 @@
       border-color: rgba(76, 175, 80, 0.5);
     }
 
-    /* Firefox hover transition fix */
-    .entry-item {
-      will-change: transform;
-    }
-
     .entry-title {
       font-weight: 600;
       font-size: 14px;
@@ -213,7 +195,6 @@
       display: flex;
       align-items: center;
       gap: 6px;
-      word-break: break-word;
     }
 
     .entry-url {
@@ -229,7 +210,6 @@
       display: flex;
       align-items: center;
       gap: 4px;
-      word-break: break-word;
     }
 
     .entry-actions {
@@ -247,18 +227,11 @@
       font-size: 10px;
       cursor: pointer;
       transition: all 0.2s ease;
-      font-family: inherit;
     }
 
     .action-btn:hover {
       background: #3b82f6;
       transform: translateY(-1px);
-    }
-
-    /* Firefox button focus */
-    .action-btn:focus-visible {
-      outline: 2px solid #4caf50;
-      outline-offset: 1px;
     }
 
     .action-btn.fill-btn {
@@ -334,18 +307,11 @@
       border-radius: 6px;
       transition: all 0.2s ease;
       font-size: 11px;
-      font-family: inherit;
     }
 
     .footer-btn:hover {
       background: rgba(255, 255, 255, 0.1);
       color: white;
-    }
-
-    /* Firefox button focus */
-    .footer-btn:focus-visible {
-      outline: 2px solid #4caf50;
-      outline-offset: 1px;
     }
 
     .lock-btn {
@@ -402,17 +368,11 @@
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s ease;
-      font-family: inherit;
     }
 
     .btn-primary:hover {
       transform: translateY(-1px);
       box-shadow: 0 4px 12px rgba(46, 125, 50, 0.4);
-    }
-
-    .btn-primary:focus-visible {
-      outline: 2px solid #4caf50;
-      outline-offset: 2px;
     }
 
     .btn-secondary {
@@ -423,33 +383,10 @@
       color: white;
       cursor: pointer;
       transition: all 0.2s ease;
-      font-family: inherit;
     }
 
     .btn-secondary:hover {
       background: rgba(255, 255, 255, 0.2);
-    }
-
-    .btn-secondary:focus-visible {
-      outline: 2px solid #4caf50;
-      outline-offset: 2px;
-    }
-
-    /* ===================== UTILITY CLASSES ===================== */
-    .hidden {
-      display: none !important;
-    }
-
-    .text-center {
-      text-align: center;
-    }
-
-    .mt-2 {
-      margin-top: 8px;
-    }
-
-    .mb-2 {
-      margin-bottom: 8px;
     }
   </style>
 </head>

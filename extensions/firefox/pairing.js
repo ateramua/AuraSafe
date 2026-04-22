@@ -1,167 +1,160 @@
 // AuraSafe Pairing Page Script (Firefox Compatible)
-// Version: 1.0.0
+// Version: 2.0.0
 
 // ===================== CROSS-BROWSER COMPATIBILITY =====================
-const browserAPI = (function() {
-  if (typeof browser !== 'undefined' && browser.runtime) {
-    return browser;
-  }
-  if (typeof chrome !== 'undefined' && chrome.runtime) {
-    return chrome;
-  }
-  return null;
-})();
+const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
+const storage = browserAPI.storage;
+const runtime = browserAPI.runtime;
 
-const runtime = browserAPI ? browserAPI.runtime : null;
-const storage = browserAPI ? browserAPI.storage : null;
+document.addEventListener("DOMContentLoaded", () => {
+    const pairingCodeInput = document.getElementById('pairingCode');
+    const pairBtn = document.getElementById('pairBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const statusDiv = document.getElementById('status');
 
-// DOM Elements
-const pairingCodeInput = document.getElementById('pairingCode');
-const pairBtn = document.getElementById('pairBtn');
-const cancelBtn = document.getElementById('cancelBtn');
-const statusDiv = document.getElementById('status');
+    if (!pairBtn || !cancelBtn || !pairingCodeInput || !statusDiv) {
+        console.error("Pairing UI elements not found in DOM");
+        return;
+    }
 
-// Helper: Show status message
-function showStatus(message, type = 'info') {
-  if (!statusDiv) return;
-  
-  statusDiv.className = `status ${type}`;
-  statusDiv.textContent = message;
-  
-  // Auto-hide success/error after 5 seconds
-  if (type === 'success' || type === 'error') {
-    setTimeout(() => {
-      if (statusDiv.className === `status ${type}`) {
-        statusDiv.style.display = 'none';
-        statusDiv.className = 'status';
-      }
-    }, 5000);
-  }
-}
+    function showStatus(message, type = 'info') {
+        statusDiv.textContent = message;
+        statusDiv.className = `status ${type}`;
+        statusDiv.style.display = 'block';
+    }
 
-// Helper: Send message to background script
-async function sendMessage(message) {
-  if (!runtime) {
-    showStatus('Extension API not available', 'error');
-    return null;
-  }
-  
-  return new Promise((resolve) => {
-    try {
-      const result = runtime.sendMessage(message);
-      if (result && typeof result.then === 'function') {
-        result.then(resolve).catch(() => resolve(null));
-      } else {
-        runtime.sendMessage(message, (response) => {
-          if (runtime.lastError) {
-            resolve(null);
-          } else {
-            resolve(response);
-          }
+    // ===================== PORT DETECTION =====================
+    async function getWebSocketPort() {
+        const ports = [3456, 8765, 58461, 5000, 7000, 3000, 3001];
+
+        for (const port of ports) {
+            try {
+                const ok = await new Promise((resolve) => {
+                    const ws = new WebSocket(`ws://localhost:${port}`);
+
+                    const timeout = setTimeout(() => {
+                        ws.close();
+                        resolve(false);
+                    }, 800);
+
+                    ws.onopen = () => {
+                        clearTimeout(timeout);
+                        ws.close();
+                        resolve(true);
+                    };
+
+                    ws.onerror = () => {
+                        clearTimeout(timeout);
+                        resolve(false);
+                    };
+                });
+
+                if (ok) return port;
+            } catch (e) {
+                // ignore and continue
+            }
+        }
+
+        return null;
+    }
+
+    // ===================== CONNECTION TEST =====================
+    async function testConnection(secret) {
+        const port = await getWebSocketPort();
+
+        if (!port) return false;
+
+        return new Promise((resolve) => {
+            const ws = new WebSocket(`ws://localhost:${port}?token=${secret}`);
+
+            const timeout = setTimeout(() => {
+                ws.close();
+                resolve(false);
+            }, 3000);
+
+            ws.onopen = () => {
+                clearTimeout(timeout);
+                ws.close();
+                resolve(true);
+            };
+
+            ws.onerror = () => {
+                clearTimeout(timeout);
+                resolve(false);
+            };
         });
-      }
-    } catch (error) {
-      console.error('Message failed:', error);
-      resolve(null);
     }
-  });
-}
 
-// Validate pairing code format
-function isValidPairingCode(code) {
-  // 32-character alphanumeric code (uppercase)
-  const regex = /^[A-Z0-9]{32}$/;
-  return code && regex.test(code);
-}
+    // ===================== PAIR BUTTON =====================
+    pairBtn.addEventListener('click', async () => {
+        const code = pairingCodeInput.value.trim();
 
-// Pair with desktop
-async function pairWithDesktop() {
-  const code = pairingCodeInput.value.trim().toUpperCase();
-  
-  if (!code) {
-    showStatus('Please enter a pairing code', 'error');
-    pairingCodeInput.focus();
-    return;
-  }
-  
-  if (!isValidPairingCode(code)) {
-    showStatus('Invalid pairing code. Code should be 32 characters (letters A-Z, numbers 0-9)', 'error');
-    pairingCodeInput.focus();
-    return;
-  }
-  
-  // Disable button and show loading
-  pairBtn.disabled = true;
-  pairBtn.innerHTML = '<span class="spinner"></span> Pairing...';
-  showStatus('Pairing with desktop app...', 'info');
-  
-  try {
-    // Send pairing request to background
-    const response = await sendMessage({
-      type: 'PAIR_WITH_DESKTOP',
-      payload: { pairingCode: code }
+        if (!code) {
+            showStatus('Please enter a pairing code', 'error');
+            return;
+        }
+
+        pairBtn.disabled = true;
+        pairBtn.textContent = 'Pairing...';
+        showStatus('Connecting to AuraSafe desktop...', 'info');
+
+        try {
+            const ok = await testConnection(code);
+
+            if (ok) {
+                // ===================== SAVE STATE (SOURCE OF TRUTH) =====================
+                // Firefox uses storage.local.set (same as Chrome via wrapper)
+                await storage.local.set({
+                    aurasafe_secret: code,
+                    aurasafe_paired: true,
+                    aurasafe_connection_status: {
+                        status: "connected"
+                    },
+                    aurasafe_pair_date: Date.now()
+                });
+
+                // ===================== SYNC BACKGROUND =====================
+                // Firefox uses runtime.sendMessage (same as Chrome via wrapper)
+                runtime.sendMessage({
+                    type: "SET_STATUS",
+                    payload: {
+                        status: "connected",
+                        secret: code
+                    }
+                }).catch(() => { });
+
+                showStatus('✅ Paired successfully', 'success');
+
+                setTimeout(() => window.close(), 1500);
+
+            } else {
+                showStatus('❌ Could not connect to desktop app', 'error');
+
+                // reset state on failure
+                await storage.local.set({
+                    aurasafe_connection_status: {
+                        status: "disconnected",
+                        secret: code,
+                        paired: true,
+                        lastSync: Date.now()
+                    }
+                });
+            }
+
+        } catch (err) {
+            console.error(err);
+            showStatus('❌ Unexpected error during pairing', 'error');
+        } finally {
+            pairBtn.disabled = false;
+            pairBtn.textContent = '🔗 Pair Extension';
+        }
     });
-    
-    if (response && response.success) {
-      showStatus('✅ Successfully paired with desktop app! Closing in 2 seconds...', 'success');
-      
-      // Save paired status
-      if (storage) {
-        await storage.local.set({ aurasafe_paired: true });
-      }
-      
-      // Close window after delay
-      setTimeout(() => {
-        window.close();
-      }, 2000);
-    } else {
-      const errorMsg = response?.error || 'Pairing failed. Please check the code and try again.';
-      showStatus(`❌ ${errorMsg}`, 'error');
-      pairBtn.disabled = false;
-      pairBtn.innerHTML = '🔗 Pair Extension';
-      pairingCodeInput.focus();
-    }
-  } catch (error) {
-    console.error('Pairing error:', error);
-    showStatus('❌ Pairing failed. Make sure the desktop app is running.', 'error');
-    pairBtn.disabled = false;
-    pairBtn.innerHTML = '🔗 Pair Extension';
-  }
-}
 
-// Cancel and close
-function cancelPairing() {
-  window.close();
-}
+    // ===================== CANCEL =====================
+    cancelBtn.addEventListener('click', () => window.close());
 
-// Auto-submit when Enter key is pressed
-pairingCodeInput.addEventListener('keypress', (event) => {
-  if (event.key === 'Enter') {
-    event.preventDefault();
-    pairWithDesktop();
-  }
+    // ===================== ENTER KEY SUPPORT =====================
+    pairingCodeInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') pairBtn.click();
+    });
 });
-
-// Event listeners
-pairBtn.addEventListener('click', pairWithDesktop);
-cancelBtn.addEventListener('click', cancelPairing);
-
-// Auto-focus input field
-pairingCodeInput.focus();
-
-// Convert to uppercase as user types
-pairingCodeInput.addEventListener('input', (event) => {
-  event.target.value = event.target.value.toUpperCase();
-});
-
-// Check if already paired on load
-async function checkExistingPairing() {
-  if (storage) {
-    const result = await storage.local.get(['aurasafe_paired']);
-    if (result.aurasafe_paired) {
-      showStatus('Already paired with desktop app', 'info');
-    }
-  }
-}
-
-checkExistingPairing();

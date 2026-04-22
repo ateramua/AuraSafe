@@ -1,97 +1,13 @@
 // ===================== POPUP SCRIPT =====================
-// AuraSafe Browser Extension - Popup UI Controller
-// Firefox Compatible Version
-// Version: 1.4.0
+// AuraSafe Browser Extension - Popup UI Controller (Firefox Compatible)
+// Version: 2.0.0 - Firefox WebExtension
 
 // ===================== CROSS-BROWSER COMPATIBILITY =====================
-const browserAPI = (function() {
-  if (typeof browser !== 'undefined' && browser.runtime) {
-    return browser;
-  }
-  if (typeof chrome !== 'undefined' && chrome.runtime) {
-    return chrome;
-  }
-  console.warn('No extension API found');
-  return null;
-})();
-
-// Helper for sending messages (works with both callback and Promise-based APIs)
-async function sendRuntimeMessage(message) {
-  if (!browserAPI || !browserAPI.runtime) return null;
-  
-  return new Promise((resolve, reject) => {
-    try {
-      const result = browserAPI.runtime.sendMessage(message);
-      if (result && typeof result.then === 'function') {
-        // Firefox style (Promise-based)
-        result.then(resolve).catch(reject);
-      } else {
-        // Chrome style (callback-based)
-        browserAPI.runtime.sendMessage(message, (response) => {
-          if (browserAPI.runtime.lastError) {
-            reject(new Error(browserAPI.runtime.lastError.message));
-          } else {
-            resolve(response);
-          }
-        });
-      }
-    } catch (error) {
-      reject(error);
-    }
-  });
-}
-
-// Helper for tabs.query
-async function queryTabs(options) {
-  if (!browserAPI || !browserAPI.tabs) return [];
-  
-  return new Promise((resolve) => {
-    try {
-      const result = browserAPI.tabs.query(options);
-      if (result && typeof result.then === 'function') {
-        result.then(resolve).catch(() => resolve([]));
-      } else {
-        browserAPI.tabs.query(options, (tabs) => {
-          if (browserAPI.runtime.lastError) {
-            resolve([]);
-          } else {
-            resolve(tabs);
-          }
-        });
-      }
-    } catch (error) {
-      resolve([]);
-    }
-  });
-}
-
-// Helper for tabs.sendMessage
-async function sendTabMessage(tabId, message) {
-  if (!browserAPI || !browserAPI.tabs) return null;
-  
-  return new Promise((resolve) => {
-    try {
-      const result = browserAPI.tabs.sendMessage(tabId, message);
-      if (result && typeof result.then === 'function') {
-        result.then(resolve).catch(() => resolve(null));
-      } else {
-        browserAPI.tabs.sendMessage(tabId, message, (response) => {
-          if (browserAPI.runtime.lastError) {
-            resolve(null);
-          } else {
-            resolve(response);
-          }
-        });
-      }
-    } catch (error) {
-      resolve(null);
-    }
-  });
-}
-
-const storage = browserAPI?.storage;
-const runtime = browserAPI?.runtime;
-const tabs = browserAPI?.tabs;
+// Detect which browser API is available
+const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
+const storage = browserAPI.storage;
+const runtime = browserAPI.runtime;
+const tabs = browserAPI.tabs;
 
 // ===================== DOM ELEMENTS =====================
 const elements = {
@@ -197,27 +113,25 @@ async function requestCredentialsFromDesktop() {
       reject(new Error('Timeout waiting for credentials'));
     }, 5000);
     
-    sendRuntimeMessage({ type: 'GET_CREDENTIALS_FROM_DESKTOP' })
-      .then((response) => {
-        clearTimeout(timeout);
-        if (response && response.success) {
-          resolve(response.credentials);
-        } else {
-          reject(new Error(response?.error || 'Failed to get credentials'));
-        }
-      })
-      .catch((error) => {
-        clearTimeout(timeout);
-        reject(error);
-      });
+    // Send message to background script to request credentials (Firefox uses callbacks or promises)
+    runtime.sendMessage({ type: 'GET_CREDENTIALS_FROM_DESKTOP' }).then(response => {
+      clearTimeout(timeout);
+      if (response && response.success) {
+        resolve(response.credentials);
+      } else {
+        reject(new Error(response?.error || 'Failed to get credentials'));
+      }
+    }).catch(err => {
+      clearTimeout(timeout);
+      reject(new Error(err.message));
+    });
   });
 }
 
 // ===================== CHECK CURRENT VAULT STATUS =====================
 async function checkCurrentVaultStatus() {
-  if (!storage) return false;
-  
   try {
+    // First check if we have stored vault status
     const result = await storage.local.get(['aurasafe_vault_status', 'aurasafe_credentials']);
     
     if (result.aurasafe_vault_status) {
@@ -241,7 +155,7 @@ async function checkCurrentVaultStatus() {
 // ===================== REQUEST FRESH STATUS FROM DESKTOP =====================
 async function requestFreshStatus() {
   try {
-    const response = await sendRuntimeMessage({ type: 'GET_VAULT_STATUS_FROM_DESKTOP' });
+    const response = await runtime.sendMessage({ type: 'GET_VAULT_STATUS_FROM_DESKTOP' });
     if (response && response.unlocked !== undefined) {
       updateVaultUI(response.unlocked);
       if (response.unlocked && response.credentials) {
@@ -254,6 +168,18 @@ async function requestFreshStatus() {
     console.log('Could not get fresh status:', err);
   }
   return false;
+}
+
+// ===================== FILL CREDENTIALS IN ACTIVE TAB =====================
+async function fillCredentials(entry) {
+  try {
+    const [tab] = await tabs.query({ active: true, currentWindow: true });
+    await tabs.sendMessage(tab.id, { type: 'FILL', payload: entry });
+    showNotification('✓ Credentials filled!');
+    setTimeout(() => window.close(), 500);
+  } catch (err) {
+    showNotification('Failed to fill credentials', true);
+  }
 }
 
 // ===================== RENDER ENTRIES =====================
@@ -300,7 +226,7 @@ function renderEntries() {
       ${entry.url ? `<div class="entry-url">${escapeHtml(entry.url)}</div>` : ''}
       ${entry.username ? `<div class="entry-username">👤 ${escapeHtml(maskSensitive(entry.username, 'username'))}</div>` : ''}
       <div class="entry-actions">
-        <button class="action-btn fill-btn" data-entry='${JSON.stringify(entry).replace(/'/g, "\\'").replace(/"/g, '&quot;')}'>🔓 Fill</button>
+        <button class="action-btn fill-btn" data-entry='${JSON.stringify(entry).replace(/'/g, "\\'")}'>🔓 Fill</button>
         ${entry.username ? `<button class="action-btn copy-user" data-username="${escapeHtml(entry.username)}">📋 Copy User</button>` : ''}
         ${entry.password ? `<button class="action-btn copy-pass" data-password="${escapeHtml(entry.password)}">📋 Copy Pass</button>` : ''}
       </div>
@@ -317,19 +243,9 @@ function attachButtonEventListeners(entries) {
       const entryData = btn.getAttribute('data-entry');
       if (entryData) {
         try {
-          // Decode HTML entities
-          const decodedEntry = entryData.replace(/&quot;/g, '"');
-          const entry = JSON.parse(decodedEntry);
-          const tabs = await queryTabs({ active: true, currentWindow: true });
-          if (tabs && tabs[0]) {
-            await sendTabMessage(tabs[0].id, { type: 'FILL', payload: entry });
-            showNotification('✓ Credentials filled!');
-            setTimeout(() => window.close(), 500);
-          } else {
-            showNotification('No active tab found', true);
-          }
+          const entry = JSON.parse(entryData);
+          await fillCredentials(entry);
         } catch (err) {
-          console.error('Fill error:', err);
           showNotification('Failed to fill credentials', true);
         }
       }
@@ -370,13 +286,9 @@ async function loadEntries() {
     </div>`;
 
   try {
-    if (storage) {
-      const result = await storage.local.get(['aurasafe_credentials']);
-      currentEntries = result.aurasafe_credentials || [];
-      renderEntries();
-    } else {
-      throw new Error('Storage API not available');
-    }
+    const result = await storage.local.get(['aurasafe_credentials']);
+    currentEntries = result.aurasafe_credentials || [];
+    renderEntries();
   } catch (err) {
     console.error('Failed to load entries', err);
     elements.entriesContainer.innerHTML = `
@@ -393,7 +305,7 @@ if (elements.lockBtn) {
   elements.lockBtn.addEventListener('click', async () => {
     if (vaultUnlocked) {
       // Lock the vault
-      await sendRuntimeMessage({ type: 'LOCK_VAULT' });
+      runtime.sendMessage({ type: 'LOCK_VAULT' });
       updateVaultUI(false);
       currentEntries = [];
       renderEntries();
@@ -406,9 +318,7 @@ if (elements.lockBtn) {
         const credentials = await requestCredentialsFromDesktop();
         
         if (credentials && credentials.length > 0) {
-          if (storage) {
-            await storage.local.set({ aurasafe_credentials: credentials });
-          }
+          await storage.local.set({ aurasafe_credentials: credentials });
           updateVaultUI(true);
           currentEntries = credentials;
           renderEntries();
@@ -430,7 +340,7 @@ if (elements.refreshBtn) {
 
 if (elements.settingsBtn) {
   elements.settingsBtn.addEventListener('click', () => {
-    sendRuntimeMessage({ type: 'OPEN_SETTINGS' });
+    runtime.sendMessage({ type: 'OPEN_SETTINGS' });
   });
 }
 
@@ -445,81 +355,64 @@ if (elements.searchInput) {
 }
 
 // ===================== STORAGE SYNC =====================
-if (storage && storage.onChanged) {
-  storage.onChanged.addListener((changes, area) => {
-    if (area === 'local') {
-      if (changes.aurasafe_credentials) {
-        currentEntries = changes.aurasafe_credentials.newValue || [];
-        renderEntries();
-      }
-      
-      // Listen for connection status changes
-      if (changes.aurasafe_connection_status) {
-        const status = changes.aurasafe_connection_status.newValue?.status || 'disconnected';
-        updateConnectionUI(status);
-      }
-      
-      // Listen for vault status changes
-      if (changes.aurasafe_vault_status) {
-        const isUnlocked = changes.aurasafe_vault_status.newValue?.unlocked || false;
-        updateVaultUI(isUnlocked);
-        if (isUnlocked) {
-          loadEntries();
-        } else {
-          currentEntries = [];
-          renderEntries();
-        }
-      }
+storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.aurasafe_credentials) {
+    currentEntries = changes.aurasafe_credentials.newValue || [];
+    renderEntries();
+  }
+  
+  // Listen for connection status changes
+  if (area === 'local' && changes.aurasafe_connection_status) {
+    const status = changes.aurasafe_connection_status.newValue?.status || 'disconnected';
+    updateConnectionUI(status);
+  }
+  
+  // Listen for vault status changes
+  if (area === 'local' && changes.aurasafe_vault_status) {
+    const isUnlocked = changes.aurasafe_vault_status.newValue?.unlocked || false;
+    updateVaultUI(isUnlocked);
+    if (isUnlocked) {
+      loadEntries();
+    } else {
+      currentEntries = [];
+      renderEntries();
     }
-  });
-}
+  }
+});
 
 // ===================== MESSAGE HANDLING =====================
-if (runtime && runtime.onMessage) {
-  runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'CONNECTION_STATUS') {
-      updateConnectionUI(message.payload?.status || 'disconnected');
-      sendResponse({ received: true });
-    }
+runtime.onMessage.addListener((message) => {
+  if (message.type === 'CONNECTION_STATUS') {
+    updateConnectionUI(message.payload?.status || 'disconnected');
+  }
 
-    // Listen for vault status changes from background
-    if (message.type === 'VAULT_STATUS_CHANGED') {
-      console.log('[Popup] Status update received:', message.payload);
-      updateVaultUI(message.payload?.unlocked || false);
-      if (message.payload?.unlocked) {
-        loadEntries();
-      } else {
-        currentEntries = [];
-        renderEntries();
-      }
-      sendResponse({ received: true });
+  // Listen for vault status changes from background
+  if (message.type === 'VAULT_STATUS_CHANGED') {
+    console.log('[Popup] Status update received:', message.payload);
+    updateVaultUI(message.payload?.unlocked || false);
+    if (message.payload?.unlocked) {
+      loadEntries();
+    } else {
+      currentEntries = [];
+      renderEntries();
     }
-    
-    // Handle credentials pushed from background
-    if (message.type === 'CREDENTIALS_UPDATED') {
-      if (message.payload && message.payload.length > 0) {
-        updateVaultUI(true);
-        currentEntries = message.payload;
-        renderEntries();
-      }
-      sendResponse({ received: true });
+  }
+  
+  // Handle credentials pushed from background
+  if (message.type === 'CREDENTIALS_UPDATED') {
+    if (message.payload && message.payload.length > 0) {
+      updateVaultUI(true);
+      currentEntries = message.payload;
+      renderEntries();
     }
-    
-    return true; // Keep channel open for async response
-  });
-}
+  }
+});
 
 // ===================== INIT =====================
 async function init() {
   try {
     // Get connection status (always show as checking initially)
     updateConnectionUI('connecting');
-    
-    if (!storage) {
-      console.error('Storage API not available');
-      updateConnectionUI('disconnected');
-      return;
-    }
     
     // Try to load credentials from storage first
     const storageResult = await storage.local.get(['aurasafe_credentials', 'aurasafe_vault_status']);
@@ -537,18 +430,23 @@ async function init() {
       updateConnectionUI('connected');
       
       // Request fresh data from background
-      const response = await sendRuntimeMessage({ type: 'REFRESH_FROM_DESKTOP' });
-      if (response && response.success) {
-        const newResult = await storage.local.get(['aurasafe_credentials']);
-        if (newResult.aurasafe_credentials && newResult.aurasafe_credentials.length > 0) {
-          updateVaultUI(true);
-          currentEntries = newResult.aurasafe_credentials;
-          renderEntries();
-          showNotification(`✅ Loaded ${currentEntries.length} credentials`);
+      try {
+        const response = await runtime.sendMessage({ type: 'REFRESH_FROM_DESKTOP' });
+        if (response && response.success) {
+          const newResult = await storage.local.get(['aurasafe_credentials']);
+          if (newResult.aurasafe_credentials && newResult.aurasafe_credentials.length > 0) {
+            updateVaultUI(true);
+            currentEntries = newResult.aurasafe_credentials;
+            renderEntries();
+            showNotification(`✅ Loaded ${currentEntries.length} credentials`);
+          } else {
+            await loadEntries(); // Show empty state
+          }
         } else {
           await loadEntries(); // Show empty state
         }
-      } else {
+      } catch (err) {
+        console.log('Refresh failed:', err);
         await loadEntries(); // Show empty state
       }
     }
@@ -564,11 +462,9 @@ init();
 
 // Refresh connection status periodically
 setInterval(async () => {
-  if (storage) {
-    const result = await storage.local.get(['aurasafe_connection_status']);
-    const status = result.aurasafe_connection_status?.status || 'disconnected';
-    updateConnectionUI(status);
-  }
+  const result = await storage.local.get(['aurasafe_connection_status']);
+  const status = result.aurasafe_connection_status?.status || 'disconnected';
+  updateConnectionUI(status);
 }, 5000);
 
 // Auto-refresh entries only if vault is unlocked
