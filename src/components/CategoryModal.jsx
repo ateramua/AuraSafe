@@ -40,6 +40,7 @@ export default function CategoryModal({
     const [selectedIds, setSelectedIds] = useState([]);
     const [copiedField, setCopiedField] = useState(null);
     const [showPassword, setShowPassword] = useState({});
+    const [autoFillEnabled, setAutoFillEnabled] = useState({});
 
     const entryType = categoryToType[category];
 
@@ -49,6 +50,11 @@ export default function CategoryModal({
         setLoading(true);
         try {
             const all = (await api.getVaultEntries()) || [];
+            
+            // Load auto-fill preferences from localStorage
+            const savedAutoFill = localStorage.getItem('aurasafe_autofill_prefs');
+            const autoFillPrefs = savedAutoFill ? JSON.parse(savedAutoFill) : {};
+            setAutoFillEnabled(autoFillPrefs);
             
             if (category === 'all') {
                 // Group entries by type for "All Items" view
@@ -79,6 +85,65 @@ export default function CategoryModal({
     useEffect(() => {
         if (isOpen) fetchEntries();
     }, [isOpen, category]);
+
+    // Launch website function
+    const launchWebsite = async (url, entryId) => {
+        if (!url) return;
+        
+        // Ensure URL has protocol
+        let finalUrl = url;
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            finalUrl = 'https://' + url;
+        }
+        
+        // Open the URL in default browser
+        window.open(finalUrl, '_blank');
+        
+        // If auto-fill is enabled for this entry, attempt to auto-fill when page loads
+        if (autoFillEnabled[entryId]) {
+            // Store credentials for auto-fill
+            const entry = entries.find(e => e.id === entryId) || 
+                          Object.values(groupedEntries).flat().find(e => e.id === entryId);
+            
+            if (entry && (entry.username || entry.email)) {
+                localStorage.setItem('aurasafe_pending_autofill', JSON.stringify({
+                    entryId: entry.id,
+                    username: entry.username || entry.email || '',
+                    password: entry.password || '',
+                    url: finalUrl,
+                    timestamp: Date.now()
+                }));
+                
+                // Show notification that auto-fill is pending
+                const notification = document.createElement('div');
+                notification.textContent = '🔐 Auto-fill ready: When the page loads, click the AuraSafe extension icon to fill credentials.';
+                notification.style.cssText = `
+                    position: fixed;
+                    bottom: 20px;
+                    right: 20px;
+                    background: #2e7d32;
+                    color: white;
+                    padding: 12px 20px;
+                    border-radius: 8px;
+                    z-index: 100000;
+                    font-size: 14px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                    animation: slideIn 0.3s ease;
+                `;
+                document.body.appendChild(notification);
+                setTimeout(() => notification.remove(), 5000);
+            }
+        }
+    };
+    
+    // Toggle auto-fill for an entry
+    const toggleAutoFill = (entryId, e) => {
+        e.stopPropagation();
+        const newValue = !autoFillEnabled[entryId];
+        const updatedPrefs = { ...autoFillEnabled, [entryId]: newValue };
+        setAutoFillEnabled(updatedPrefs);
+        localStorage.setItem('aurasafe_autofill_prefs', JSON.stringify(updatedPrefs));
+    };
 
     // Mask password function
     const maskPassword = (password) => {
@@ -277,12 +342,39 @@ export default function CategoryModal({
                 )}
             </div>
 
-            <button
-                onClick={() => handleEditClick(e)}
-                style={styles.editBtn}
-            >
-                Edit
-            </button>
+            <div style={styles.actionButtons}>
+                {/* Launch Button - only show if URL exists and it's a credential/password entry */}
+                {e.url && (e.type === 'credential' || e.type === 'passkey') && (
+                    <button
+                        onClick={() => launchWebsite(e.url, e.id)}
+                        style={styles.launchBtn}
+                        title="Launch website"
+                    >
+                        🚀 Launch
+                    </button>
+                )}
+                
+                {/* Auto-fill Toggle Button */}
+                {(e.type === 'credential' || e.type === 'passkey') && e.url && (
+                    <button
+                        onClick={(event) => toggleAutoFill(e.id, event)}
+                        style={{
+                            ...styles.autoFillBtn,
+                            background: autoFillEnabled[e.id] ? '#2e7d32' : '#4B5563',
+                        }}
+                        title={autoFillEnabled[e.id] ? "Auto-fill enabled - Click to disable" : "Auto-fill disabled - Click to enable"}
+                    >
+                        {autoFillEnabled[e.id] ? '🔓 Auto-fill ON' : '🔒 Auto-fill OFF'}
+                    </button>
+                )}
+                
+                <button
+                    onClick={() => handleEditClick(e)}
+                    style={styles.editBtn}
+                >
+                    Edit
+                </button>
+            </div>
         </div>
     );
 
@@ -454,7 +546,7 @@ const styles = {
         padding: '1.5rem',
         borderRadius: '1rem',
         width: '90%',
-        maxWidth: '650px',
+        maxWidth: '750px',
         color: '#fff',
         boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
         border: '1px solid rgba(76,175,80,0.3)',
@@ -602,14 +694,40 @@ const styles = {
         fontWeight: 'bold',
         marginLeft: '4px',
     },
-    editBtn: {
+    actionButtons: {
+        display: 'flex',
+        gap: '6px',
+        alignItems: 'center',
+    },
+    launchBtn: {
         background: '#3B82F6',
+        color: '#fff',
+        border: 'none',
+        padding: '6px 10px',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        fontSize: '11px',
+        fontWeight: '500',
+    },
+    autoFillBtn: {
+        color: '#fff',
+        border: 'none',
+        padding: '6px 10px',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        fontSize: '10px',
+        fontWeight: '500',
+        transition: 'all 0.2s ease',
+    },
+    editBtn: {
+        background: '#8B5CF6',
         color: '#fff',
         border: 'none',
         padding: '6px 12px',
         borderRadius: '6px',
         cursor: 'pointer',
-        fontSize: '12px',
+        fontSize: '11px',
+        fontWeight: '500',
     },
     loading: {
         textAlign: 'center',

@@ -4,15 +4,13 @@ import PasswordGenerator from './PasswordGenerator';
 
 // Category fields for different entry types
 const categoryFields = {
-  // In EntryModal.jsx, update the credential fields array to include passkeyId:
-  // In EntryModal.jsx, update the credential fields:
   credential: [
     { label: 'Name', name: 'title', type: 'text', required: true },
-    { label: 'Username', name: 'username', type: 'text' },
+    { label: 'Username/Email', name: 'username', type: 'text' },
     { label: 'Password', name: 'password', type: 'password' },
-    { label: 'TOTP Secret', name: 'totpSecret', type: 'text', placeholder: 'Enter secret key from QR code (optional)' }, // NEW
+    { label: 'TOTP Secret', name: 'totpSecret', type: 'text', placeholder: 'Enter secret key from QR code (optional)' },
     { label: 'Passkey ID', name: 'passkeyId', type: 'text', placeholder: 'Credential ID from service (optional)' },
-    { label: 'URL', name: 'url', type: 'url', placeholder: 'https://example.com' },
+    { label: 'Website URL', name: 'url', type: 'url', placeholder: 'https://example.com' },
     { label: 'Notes', name: 'notes', type: 'text' },
   ],
   passkey: [
@@ -115,6 +113,11 @@ export default function EntryModal({
         updated_at: Date.now(),
       };
 
+      // Ensure URL has proper format
+      if (saveData.url && !saveData.url.startsWith('http://') && !saveData.url.startsWith('https://')) {
+        saveData.url = 'https://' + saveData.url;
+      }
+
       if (entry?.id) {
         saveData.id = entry.id;
         saveData.created_at = entry.created_at;
@@ -215,6 +218,20 @@ export default function EntryModal({
                       🙈 Hide
                     </button>
                   )}
+                </div>
+              ) : field.name === 'url' ? (
+                <div>
+                  <input
+                    name={field.name}
+                    type={field.type}
+                    value={formData[field.name] || ''}
+                    onChange={handleChange}
+                    placeholder={field.placeholder || "https://example.com"}
+                    style={styles.input}
+                  />
+                  <div style={styles.urlHint}>
+                    💡 Add the website URL to enable the "Launch" button
+                  </div>
                 </div>
               ) : (
                 <input
@@ -330,6 +347,12 @@ const styles = {
     outline: 'none',
     transition: 'all 0.2s ease',
     boxSizing: 'border-box',
+  },
+  urlHint: {
+    fontSize: '0.7rem',
+    color: '#9CA3AF',
+    marginTop: '4px',
+    fontStyle: 'italic',
   },
   passwordContainer: {
     display: 'flex',

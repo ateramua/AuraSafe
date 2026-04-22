@@ -46,8 +46,8 @@
       font-size: 32px;
       font-weight: 700;
       background: linear-gradient(135deg, #fff, #a5d6a5);
-      -webkit-background-clip: text;
       background-clip: text;
+      -webkit-background-clip: text;
       color: transparent;
     }
 
@@ -236,6 +236,7 @@
       font-size: 0.85rem;
       font-weight: 500;
       transition: all 0.2s ease;
+      font-family: inherit;
     }
 
     .btn-primary {
@@ -304,6 +305,7 @@
       font-size: 13px;
       z-index: 1000;
       animation: slideIn 0.3s ease;
+      font-family: inherit;
     }
 
     .toast-success {
@@ -335,6 +337,12 @@
       text-decoration: underline;
     }
 
+    /* Firefox-specific focus outline */
+    button:focus, select:focus, input:focus {
+      outline: 2px solid #2e7d32;
+      outline-offset: 2px;
+    }
+
     /* Animations */
     @keyframes pulse {
       0%, 100% { opacity: 1; }
@@ -363,6 +371,31 @@
 
     .mb-2 {
       margin-bottom: 0.5rem;
+    }
+
+    /* Firefox scrollbar styling */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: rgba(20, 40, 20, 0.5);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #2e7d32;
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #1b5e20;
+    }
+
+    /* Firefox scrollbar */
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: #2e7d32 rgba(20, 40, 20, 0.5);
     }
   </style>
 </head>
