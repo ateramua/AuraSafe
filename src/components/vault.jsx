@@ -153,7 +153,7 @@ export default function Vault() {
     setSyncMessage(type === 'push' ? 'Pushing...' : 'Pulling...');
 
     try {
-      const syncFn = api?.sync?.[type]; // FIX #1 safe access
+      const syncFn = api?.sync?.[type];
       if (!syncFn) throw new Error(`Sync method not found: ${type}`);
 
       const res = await syncFn();
@@ -175,34 +175,6 @@ export default function Vault() {
       setSyncLoading(false);
     }
   };
-
-  const handleUnlock = async (e) => {
-  e.preventDefault();
-  setLoading(true);
-  setUnlockError(null);
-
-  try {
-    const res = await api.unlockVault(masterPassword);
-
-    if (!res.success) {
-      setUnlockError('Incorrect password. Please try again.');
-      return;
-    }
-
-    // ✅ VERIFY GLOBAL STATE
-    const status = await api.isUnlocked();
-    console.log('[Vault] Global unlock status:', status);
-
-    setUnlocked(true);
-    setMasterPassword('');
-
-    await loadEntries();
-  } catch (err) {
-    setUnlockError('Failed to unlock vault.');
-  } finally {
-    setLoading(false);
-  }
-};
 
   const handleSaveEdit = async (updatedEntry) => {
     try {
@@ -317,7 +289,7 @@ export default function Vault() {
                 }}
                 onDelete={async (id) => {
                   try {
-                    await api.deleteVaultEntry(id); // FIX #3
+                    await api.deleteVaultEntry(id);
                     await loadEntries();
                   } catch (err) {
                     handleError('Delete failed', err);
@@ -329,6 +301,7 @@ export default function Vault() {
         </div>
       </div>
 
+      {/* FIX: Pass the full api object instead of a custom object */}
       <CategoryModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
@@ -339,7 +312,7 @@ export default function Vault() {
       <EntryModal
         isOpen={showEditModal}
         entry={editingEntry}
-        category="passwords"   // FIX #2
+        category="passwords"
         onClose={() => {
           setShowEditModal(false);
           setEditingEntry(null);
@@ -350,3 +323,76 @@ export default function Vault() {
     </div>
   );
 }
+
+const styles = {
+  mainContainer: {
+    display: 'flex',
+    minHeight: '100vh',
+    backgroundColor: '#0a5c2e',
+  },
+  content: {
+    flex: 1,
+    padding: '2rem',
+    overflowY: 'auto',
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '1rem',
+  },
+  lockButton: {
+    marginLeft: 10,
+    background: '#dc3545',
+    color: '#fff',
+    border: 'none',
+    padding: '0.5rem 1rem',
+    cursor: 'pointer',
+  },
+  syncToolbar: {
+    display: 'flex',
+    gap: 10,
+    margin: '1rem 0',
+    alignItems: 'center',
+  },
+  entriesGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+    gap: '1rem',
+  },
+  container: {
+    padding: '2rem',
+    maxWidth: 800,
+    margin: '0 auto',
+    color: '#F3F4F6',
+  },
+  input: {
+    padding: '0.75rem',
+    width: '100%',
+    marginBottom: '1rem',
+    background: '#111827',
+    border: '1px solid #374151',
+    borderRadius: '0.5rem',
+    color: '#F3F4F6',
+  },
+  button: {
+    padding: '0.5rem 1rem',
+    background: '#3B82F6',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '0.5rem',
+    cursor: 'pointer',
+  },
+  errorMessage: {
+    backgroundColor: '#fee2e2',
+    border: '1px solid #fecaca',
+    borderRadius: '8px',
+    padding: '12px',
+    marginBottom: '20px',
+    color: '#991b1b',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '0.9rem',
+  },
+};

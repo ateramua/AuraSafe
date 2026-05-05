@@ -5,14 +5,24 @@
   "productName": "AuraSafe",
   "main": "electron/main/index.mjs",
   "type": "module",
+  "author": {
+  "name": "AuraSafe",
+  "email": "support@aurasafe.com"
+},
   "scripts": {
     "dev": "cross-env NODE_ENV=development next dev",
     "build": "cross-env NODE_ENV=production next build",
     "start": "cross-env NODE_ENV=production next start",
-    "electron": "cross-env NODE_ENV=production electron .",
-    "electron:dev": "cross-env NODE_ENV=development electron .",
-    "export": "next build && next export",
-    "dist:mac": "npm run export && electron-builder --mac --arm64"
+    "electron:dev": "cross-env NODE_ENV=development ELECTRON=true npm run dev",
+    "electron:build": "cross-env NODE_ENV=production ELECTRON=true next build",
+    "electron": "cross-env NODE_ENV=production ELECTRON=true electron .",
+    "clean": "rm -rf .next out release dist",
+    "clean:all": "rm -rf .next out release dist node_modules package-lock.json",
+    "postinstall": "electron-builder install-app-deps",
+    "dist:mac": "npm run electron:build && electron-builder --mac --arm64",
+    "dist:mac:intel": "npm run electron:build && electron-builder --mac --x64",
+    "dist:win": "npm run electron:build && electron-builder --win",
+    "dist:linux": "npm run electron:build && electron-builder --linux"
   },
   "build": {
     "appId": "com.aurasafe.app",
@@ -50,7 +60,24 @@
       "icon": "electron/assets/icon.icns",
       "category": "public.app-category.productivity",
       "hardenedRuntime": true,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "entitlements": "electron/assets/entitlements.mac.plist",
+      "entitlementsInherit": "electron/assets/entitlements.mac.plist"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "electron/assets/icon.ico"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "electron/assets/icon.png",
+      "category": "Utility"
     }
   },
   "dependencies": {

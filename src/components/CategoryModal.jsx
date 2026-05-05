@@ -4,6 +4,36 @@ import EntryModal from './EntryModal';
 import PasskeyModal from './PasskeyModal';
 import TOTPDisplay from './TOTPDisplay';
 
+// Inject styles on client side only
+if (typeof document !== 'undefined') {
+  const styleSheet = document.createElement('style');
+  styleSheet.textContent = `
+    .copyable-field:hover {
+        background: rgba(59, 130, 246, 0.3);
+        transform: scale(1.02);
+    }
+    .eye-button:hover {
+        background: rgba(255, 255, 255, 0.2);
+    }
+    .item:hover {
+        background: #2a5a2f;
+        transform: translateX(2px);
+    }
+    button:hover {
+        transform: translateY(-1px);
+        filter: brightness(1.05);
+    }
+    button:active {
+        transform: translateY(0);
+    }
+    .url-link:hover {
+        text-decoration: underline;
+        cursor: pointer;
+    }
+  `;
+  document.head.appendChild(styleSheet);
+}
+
 const categoryToType = {
     all: null,
     passwords: 'credential',
@@ -86,6 +116,18 @@ export default function CategoryModal({
         if (isOpen) fetchEntries();
     }, [isOpen, category]);
 
+    // Copy URL to clipboard function
+    const copyUrlToClipboard = async (url, entryId) => {
+        if (!url) return;
+        try {
+            await navigator.clipboard.writeText(url);
+            setCopiedField(`url_${entryId}`);
+            setTimeout(() => setCopiedField(null), 2000);
+        } catch (err) {
+            console.error('Failed to copy URL:', err);
+        }
+    };
+
     // Launch website function
     const launchWebsite = async (url, entryId) => {
         if (!url) return;
@@ -115,23 +157,25 @@ export default function CategoryModal({
                 }));
                 
                 // Show notification that auto-fill is pending
-                const notification = document.createElement('div');
-                notification.textContent = '🔐 Auto-fill ready: When the page loads, click the AuraSafe extension icon to fill credentials.';
-                notification.style.cssText = `
-                    position: fixed;
-                    bottom: 20px;
-                    right: 20px;
-                    background: #2e7d32;
-                    color: white;
-                    padding: 12px 20px;
-                    border-radius: 8px;
-                    z-index: 100000;
-                    font-size: 14px;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                    animation: slideIn 0.3s ease;
-                `;
-                document.body.appendChild(notification);
-                setTimeout(() => notification.remove(), 5000);
+                if (typeof document !== 'undefined') {
+                    const notification = document.createElement('div');
+                    notification.textContent = '🔐 Auto-fill ready: When the page loads, click the AuraSafe extension icon to fill credentials.';
+                    notification.style.cssText = `
+                        position: fixed;
+                        bottom: 20px;
+                        right: 20px;
+                        background: #2e7d32;
+                        color: white;
+                        padding: 12px 20px;
+                        border-radius: 8px;
+                        z-index: 100000;
+                        font-size: 14px;
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                        animation: slideIn 0.3s ease;
+                    `;
+                    document.body.appendChild(notification);
+                    setTimeout(() => notification.remove(), 5000);
+                }
             }
         }
     };
@@ -262,6 +306,7 @@ export default function CategoryModal({
                     {/* Credential fields */}
                     {e.username && (
                         <span
+                            className="copyable-field"
                             style={styles.copyableField}
                             onClick={() => copyToClipboard(e.username, 'username', e.id)}
                             title="Click to copy username"
@@ -273,6 +318,7 @@ export default function CategoryModal({
                     {e.password && (
                         <span style={styles.passwordWrapper}>
                             <span
+                                className="copyable-field"
                                 style={styles.copyableField}
                                 onClick={() => copyToClipboard(e.password, 'password', e.id)}
                                 title="Click to copy password"
@@ -282,6 +328,7 @@ export default function CategoryModal({
                             <button
                                 onClick={(event) => togglePasswordVisibility(e.id, event)}
                                 style={styles.eyeButton}
+                                className="eye-button"
                                 title={showPassword[e.id] ? "Hide password" : "Show password"}
                             >
                                 {showPassword[e.id] ? '🙈' : '👁️'}
@@ -289,9 +336,25 @@ export default function CategoryModal({
                             {copiedField === `password_${e.id}` && <span style={styles.copiedIndicator}> ✓ Copied!</span>}
                         </span>
                     )}
+                    {/* URL field - displays "URL" as clickable text that copies the actual URL */}
                     {e.url && (
-                        <span style={styles.urlField}>
-                            🔗 {e.url}
+                        <span style={styles.urlFieldWrapper}>
+                            <span
+                                className="url-link"
+                                style={styles.urlLink}
+                                onClick={() => copyUrlToClipboard(e.url, e.id)}
+                                title="Click to copy URL"
+                            >
+                                🔗 URL
+                            </span>
+                            {copiedField === `url_${e.id}` && <span style={styles.copiedIndicator}> ✓ Copied!</span>}
+                            <button
+                                onClick={() => launchWebsite(e.url, e.id)}
+                                style={styles.inlineLaunchBtn}
+                                title="Launch website"
+                            >
+                                Launch
+                            </button>
                         </span>
                     )}
                     {/* Contact/Address fields */}
@@ -325,6 +388,7 @@ export default function CategoryModal({
                     {/* Passkey fields */}
                     {e.type === 'passkey' && e.passkeyId && (
                         <span
+                            className="copyable-field"
                             style={styles.copyableField}
                             onClick={() => copyToClipboard(e.passkeyId, 'passkeyId', e.id)}
                             title="Click to copy passkey ID"
@@ -343,17 +407,6 @@ export default function CategoryModal({
             </div>
 
             <div style={styles.actionButtons}>
-                {/* Launch Button - only show if URL exists and it's a credential/password entry */}
-                {e.url && (e.type === 'credential' || e.type === 'passkey') && (
-                    <button
-                        onClick={() => launchWebsite(e.url, e.id)}
-                        style={styles.launchBtn}
-                        title="Launch website"
-                    >
-                        🚀 Launch
-                    </button>
-                )}
-                
                 {/* Auto-fill Toggle Button */}
                 {(e.type === 'credential' || e.type === 'passkey') && e.url && (
                     <button
@@ -683,10 +736,29 @@ const styles = {
         borderRadius: '4px',
         transition: 'all 0.2s ease',
     },
-    urlField: {
+    urlFieldWrapper: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px',
+    },
+    urlLink: {
+        color: '#60A5FA',
+        cursor: 'pointer',
+        fontSize: '12px',
         display: 'inline-flex',
         alignItems: 'center',
         gap: '4px',
+        transition: 'all 0.2s ease',
+    },
+    inlineLaunchBtn: {
+        background: '#3B82F6',
+        color: '#fff',
+        border: 'none',
+        padding: '2px 8px',
+        borderRadius: '4px',
+        cursor: 'pointer',
+        fontSize: '10px',
+        transition: 'all 0.2s ease',
     },
     copiedIndicator: {
         color: '#10B981',
@@ -698,16 +770,6 @@ const styles = {
         display: 'flex',
         gap: '6px',
         alignItems: 'center',
-    },
-    launchBtn: {
-        background: '#3B82F6',
-        color: '#fff',
-        border: 'none',
-        padding: '6px 10px',
-        borderRadius: '6px',
-        cursor: 'pointer',
-        fontSize: '11px',
-        fontWeight: '500',
     },
     autoFillBtn: {
         color: '#fff',
@@ -769,27 +831,3 @@ const styles = {
         paddingLeft: '0.5rem',
     },
 };
-
-// Add hover styles
-const styleSheet = document.createElement('style');
-styleSheet.textContent = `
-    .copyable-field:hover {
-        background: rgba(59, 130, 246, 0.3);
-        transform: scale(1.02);
-    }
-    .eye-button:hover {
-        background: rgba(255, 255, 255, 0.2);
-    }
-    .item:hover {
-        background: #2a5a2f;
-        transform: translateX(2px);
-    }
-    button:hover {
-        transform: translateY(-1px);
-        filter: brightness(1.05);
-    }
-    button:active {
-        transform: translateY(0);
-    }
-`;
-document.head.appendChild(styleSheet);

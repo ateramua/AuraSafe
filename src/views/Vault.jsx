@@ -1,36 +1,45 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import Sidebar from '../components/Sidebar';
 import CategoryModal from '../components/CategoryModal';
+import EntryModal from '../components/EntryModal';
 
 export default function Vault() {
   const router = useRouter();
+
   const [initialized, setInitialized] = useState(null);
   const [unlocked, setUnlocked] = useState(false);
   const [entries, setEntries] = useState([]);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
   const [masterPassword, setMasterPassword] = useState('');
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
+
   const [syncMessage, setSyncMessage] = useState('');
   const [syncLoading, setSyncLoading] = useState(false);
+
   const [unlockError, setUnlockError] = useState(null);
 
-  // Modal state
   const [modalCategory, setModalCategory] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
+  const [editingEntry, setEditingEntry] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+
   const api = typeof window !== 'undefined' ? window.api : null;
 
-  const setEntriesSafe = (data) => setEntries(Array.isArray(data) ? data : []);
+  const setEntriesSafe = (data) =>
+    setEntries(Array.isArray(data) ? data : []);
 
   const handleError = (msg, err) => {
     console.error(msg, err);
-    setError(`${msg}: ${err.message}`);
+    setError(`${msg}: ${err?.message || err}`);
   };
 
-  const loadEntries = async () => {
+  const loadEntries = useCallback(async () => {
     if (!api) return;
     try {
       const data = await api.getVaultEntries();
@@ -38,82 +47,44 @@ export default function Vault() {
     } catch (err) {
       handleError('Failed to load entries', err);
     }
-  };
-
-  // Listen for vault status changes from main process
-  useEffect(() => {
-    if (!api || !api.onVaultStatusChange) return;
-
-    // Set up listener for vault status changes
-    const handleVaultStatusChange = (status) => {
-      console.log('[Vault] Status changed:', status);
-      setUnlocked(status.unlocked);
-      
-      if (!status.unlocked) {
-        // Vault was locked, clear entries
-        setEntries([]);
-      } else if (status.unlocked) {
-        // Vault was unlocked, reload entries
-        loadEntries();
-      }
-    };
-
-    // Register the listener
-    api.onVaultStatusChange(handleVaultStatusChange);
-
-    // Cleanup listener on unmount
-    return () => {
-      if (api.removeVaultStatusListener) {
-        api.removeVaultStatusListener(handleVaultStatusChange);
-      }
-    };
   }, [api]);
 
   useEffect(() => {
     if (!api) return;
+
     const init = async () => {
       try {
         const isInit = await api.isInitialized();
         setInitialized(isInit);
 
         if (isInit) {
-          const isUnlocked = await api.isUnlocked();
-          setUnlocked(isUnlocked);
-          if (isUnlocked) loadEntries();
+          const isUnlockedStatus = await api.isUnlocked();
+          setUnlocked(isUnlockedStatus);
+
+          if (isUnlockedStatus) {
+            await loadEntries();
+          }
         }
       } catch (err) {
         handleError('Failed to check vault status', err);
       }
     };
-    init();
-  }, []);
 
-  useEffect(() => {
-    if (!api || !initialized || unlocked) return;
-    const check = async () => {
-      try {
-        const available = await api.biometric.isAvailable();
-        setBiometricAvailable(available);
-        if (available) {
-          const enabled = await api.biometric.isEnabled();
-          setBiometricEnabled(enabled);
-        }
-      } catch (err) {
-        console.warn('Biometric check failed', err);
-      }
-    };
-    check();
-  }, [initialized, unlocked]);
+    init();
+  }, [api, loadEntries]);
 
   const handleInit = async (e) => {
     e.preventDefault();
     setLoading(true);
+
     try {
       await api.initVault(masterPassword);
+
       setInitialized(true);
       setUnlocked(true);
       setMasterPassword('');
-      loadEntries();
+
+      await loadEntries();
     } catch (err) {
       handleError('Initialization failed', err);
     } finally {
@@ -125,16 +96,22 @@ export default function Vault() {
     e.preventDefault();
     setLoading(true);
     setUnlockError(null);
+
     try {
       const res = await api.unlockVault(masterPassword);
+
       if (!res.success) {
         setUnlockError('Incorrect password. Please try again.');
         setLoading(false);
         return;
       }
+
+      const status = await api.isUnlocked();
+      console.log('[Vault] Global unlock status:', status);
+
       setUnlocked(true);
-      setEntriesSafe(res.entries);
       setMasterPassword('');
+      await loadEntries();
     } catch (err) {
       setUnlockError('Failed to unlock vault. Please try again.');
       console.error(err);
@@ -146,18 +123,20 @@ export default function Vault() {
   const handleBiometricUnlock = async () => {
     setLoading(true);
     setUnlockError(null);
+
     try {
       const res = await api.biometric.unlock();
+
       if (!res.success) {
-        setUnlockError(res.error || 'Biometric unlock failed. Please use master password.');
+        setUnlockError(res.error || 'Biometric unlock failed.');
         setLoading(false);
         return;
       }
+
       setUnlocked(true);
-      setEntriesSafe(res.entries);
+      await loadEntries();
     } catch (err) {
-      setUnlockError('Biometric unlock error. Please use master password.');
-      console.error(err);
+      setUnlockError('Biometric unlock error.');
     } finally {
       setLoading(false);
     }
@@ -173,24 +152,26 @@ export default function Vault() {
     }
   };
 
-  const handlePasswordChange = (e) => {
-    setMasterPassword(e.target.value);
-    if (unlockError) setUnlockError(null);
-  };
-
   const handleSync = async (type) => {
     setSyncLoading(true);
     setSyncMessage(type === 'push' ? 'Pushing...' : 'Pulling...');
+
     try {
-      const res = await api.sync[type]();
+      const syncFn = api?.sync?.[type];
+      if (!syncFn) throw new Error(`Sync method not found: ${type}`);
+
+      const res = await syncFn();
+
       if (!res.success) {
         setSyncMessage(`❌ ${res.error}`);
         return;
       }
-      if (type === 'push') setSyncMessage(`✅ CID: ${res.cid}`);
-      else {
+
+      if (type === 'push') {
+        setSyncMessage(`✅ CID: ${res.cid}`);
+      } else {
         setSyncMessage('✅ Pulled successfully');
-        loadEntries();
+        await loadEntries();
       }
     } catch (err) {
       setSyncMessage(`❌ ${err.message}`);
@@ -199,15 +180,20 @@ export default function Vault() {
     }
   };
 
-  const openCategoryModal = (categoryId) => {
-    setModalCategory(categoryId);
-    setIsModalOpen(true);
+  const handleSaveEdit = async (updatedEntry) => {
+    try {
+      await api.saveVaultEntry(updatedEntry);
+      setShowEditModal(false);
+      setEditingEntry(null);
+      await loadEntries();
+    } catch (err) {
+      alert('Failed to update entry: ' + err.message);
+    }
   };
 
-  // ------------------------
-  // UI States
-  // ------------------------
-  if (loading) return <div style={styles.container}>Loading...</div>;
+  if (loading && !unlocked)
+    return <div style={styles.container}>Loading...</div>;
+
   if (error) return <div style={styles.container}>Error: {error}</div>;
 
   if (!initialized) {
@@ -218,7 +204,7 @@ export default function Vault() {
           <input
             type="password"
             value={masterPassword}
-            onChange={handlePasswordChange}
+            onChange={(e) => setMasterPassword(e.target.value)}
             placeholder="Master password"
             style={styles.input}
           />
@@ -232,42 +218,50 @@ export default function Vault() {
     return (
       <div style={styles.container}>
         <h2>Unlock Vault</h2>
+
         {unlockError && (
           <div style={styles.errorMessage}>
-            <span style={styles.errorIcon}>⚠️</span>
+            <span>⚠️</span>
             <span>{unlockError}</span>
           </div>
         )}
+
         <form onSubmit={handleUnlock}>
           <input
             type="password"
             value={masterPassword}
-            onChange={handlePasswordChange}
+            onChange={(e) => setMasterPassword(e.target.value)}
             placeholder="Master password"
             style={styles.input}
-            autoFocus
           />
-          <button style={styles.button} disabled={loading}>
+
+          <button style={styles.button}>
             {loading ? 'Unlocking...' : 'Unlock'}
           </button>
         </form>
+
         {biometricAvailable && biometricEnabled && (
           <button
             onClick={handleBiometricUnlock}
-            style={{ ...styles.button, background: '#4CAF50', marginTop: 10 }}
-            disabled={loading}
+            style={{ ...styles.button, marginTop: 10, background: '#4CAF50' }}
           >
-            {loading ? 'Authenticating...' : 'Unlock with Biometric'}
+            Biometric Unlock
           </button>
         )}
       </div>
     );
   }
 
-  // Unlocked view
+  // Unlocked view - NO ENTRIES displayed here, only welcome message
   return (
     <div style={styles.mainContainer}>
-      <Sidebar onOpenCategory={openCategoryModal} />
+      <Sidebar
+        onOpenCategory={(id) => {
+          setModalCategory(id);
+          setIsModalOpen(true);
+        }}
+      />
+
       <div style={styles.content}>
         <div style={styles.header}>
           <h2>AuraSafe Vault</h2>
@@ -275,11 +269,8 @@ export default function Vault() {
             <button style={styles.settingsButton} onClick={() => router.push('/settings')}>
               ⚙️
             </button>
-            <button onClick={handleLock} style={styles.lockButton}>
+            <button style={styles.lockButton} onClick={handleLock}>
               Lock
-            </button>
-            <button onClick={handleLock} style={styles.logoutButton}>
-              🚪 Logout
             </button>
           </div>
         </div>
@@ -295,18 +286,32 @@ export default function Vault() {
           {syncMessage && <div style={styles.syncMessage}>{syncMessage}</div>}
         </div>
 
-        {/* Welcome message */}
+        {/* Welcome message - NO entries displayed here */}
         <div style={styles.welcome}>
+          <p>🔐 Welcome to AuraSafe Vault</p>
           <p>Click on any category in the sidebar to view and manage your items.</p>
           <p>Use the buttons above to sync your vault with IPFS.</p>
         </div>
       </div>
 
+      {/* CategoryModal handles displaying entries when categories are clicked */}
       <CategoryModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         category={modalCategory}
         api={api}
+      />
+
+      <EntryModal
+        isOpen={showEditModal}
+        entry={editingEntry}
+        category="passwords"
+        onClose={() => {
+          setShowEditModal(false);
+          setEditingEntry(null);
+        }}
+        onSave={handleSaveEdit}
+        zIndex={2100}
       />
     </div>
   );
@@ -345,15 +350,6 @@ const styles = {
     border: 'none',
     padding: '0.5rem 1rem',
     cursor: 'pointer',
-  },
-  logoutButton: {
-    marginLeft: 10,
-    background: '#f97316',
-    color: '#fff',
-    border: 'none',
-    padding: '0.5rem 1rem',
-    cursor: 'pointer',
-    borderRadius: '0.5rem',
   },
   syncToolbar: {
     display: 'flex',
@@ -419,5 +415,4 @@ const styles = {
     gap: '8px',
     fontSize: '0.9rem',
   },
-  errorIcon: { fontSize: '1.2rem' },
 };

@@ -57,6 +57,35 @@ const categoryFields = {
   ],
 };
 
+// Inject styles on client side only
+if (typeof document !== 'undefined') {
+  const styleSheet = document.createElement('style');
+  styleSheet.textContent = `
+    input:hover, textarea:hover {
+      border-color: #4caf50;
+    }
+    input:focus, textarea:focus {
+      border-color: #4caf50;
+      box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+    }
+    button:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.05);
+    }
+    button:active {
+      transform: translateY(0);
+    }
+    .close-btn:hover {
+      background: rgba(239, 68, 68, 0.2);
+      color: #EF4444;
+    }
+    .reveal-btn:hover, .hide-btn:hover {
+      transform: scale(1.05);
+    }
+  `;
+  document.head.appendChild(styleSheet);
+}
+
 export default function EntryModal({
   isOpen,
   entry,
@@ -153,7 +182,7 @@ export default function EntryModal({
           <h2 style={styles.title}>
             {entry?.id ? 'Edit Entry' : `Add ${category === 'passkeys' ? 'Passkey' : category}`}
           </h2>
-          <button onClick={onClose} style={styles.closeBtn}>×</button>
+          <button onClick={onClose} style={styles.closeBtn} className="close-btn">×</button>
         </div>
 
         <form onSubmit={handleSubmit}>
@@ -460,30 +489,3 @@ const styles = {
     transition: 'all 0.2s ease',
   },
 };
-
-// Add hover effects
-const styleSheet = document.createElement('style');
-styleSheet.textContent = `
-  input:hover, textarea:hover {
-    border-color: #4caf50;
-  }
-  input:focus, textarea:focus {
-    border-color: #4caf50;
-    box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
-  }
-  button:hover {
-    transform: translateY(-1px);
-    filter: brightness(1.05);
-  }
-  button:active {
-    transform: translateY(0);
-  }
-  .close-btn:hover {
-    background: rgba(239, 68, 68, 0.2);
-    color: #EF4444;
-  }
-  .reveal-btn:hover, .hide-btn:hover {
-    transform: scale(1.05);
-  }
-`;
-document.head.appendChild(styleSheet);
