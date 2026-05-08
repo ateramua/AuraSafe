@@ -172,6 +172,37 @@ export async function getSyncCID() {
   }
   return null;
 }
+// src/lib/api-client.js - Add these missing exports
+
+export const changePassword = async (currentPassword, newPassword) => {
+  try {
+    const result = await window.api.changePassword(currentPassword, newPassword);
+    return result;
+  } catch (error) {
+    console.error('[API] changePassword error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+export const generatePairingCode = async () => {
+  try {
+    const result = await window.api.generatePairingCode();
+    return result;
+  } catch (error) {
+    console.error('[API] generatePairingCode error:', error);
+    return { secret: null };
+  }
+};
+
+export const verifyPairingCode = async (secret) => {
+  try {
+    const result = await window.api.verifyPairingCode(secret);
+    return result;
+  } catch (error) {
+    console.error('[API] verifyPairingCode error:', error);
+    return { valid: false };
+  }
+};
 
 // ===== Settings =====
 export async function getAutoSync() {

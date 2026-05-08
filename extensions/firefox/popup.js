@@ -1,9 +1,8 @@
 // ===================== POPUP SCRIPT =====================
 // AuraSafe Browser Extension - Popup UI Controller (Firefox Compatible)
-// Version: 2.0.0 - Firefox WebExtension
+// Version: 2.1.0 - Added manual fill buttons
 
 // ===================== CROSS-BROWSER COMPATIBILITY =====================
-// Detect which browser API is available
 const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
 const storage = browserAPI.storage;
 const runtime = browserAPI.runtime;
@@ -29,6 +28,7 @@ let connectionStatus = 'unknown';
 let vaultUnlocked = false;
 let refreshTimer = null;
 let searchDebounceTimer = null;
+let currentEntry = null; // Track selected entry for manual fill
 
 // ===================== CONFIG =====================
 const CONFIG = {
@@ -60,6 +60,27 @@ function showNotification(message, isError = false) {
   notification.textContent = message;
   document.body.appendChild(notification);
   setTimeout(() => notification.remove(), 3000);
+}
+
+// ===================== MANUAL FILL FUNCTIONS =====================
+async function sendFill(type, payload) {
+  try {
+    const [tab] = await tabs.query({
+      active: true,
+      currentWindow: true
+    });
+    
+    await tabs.sendMessage(tab.id, {
+      type,
+      payload
+    });
+    
+    showNotification(`✓ ${type.replace('FILL_', '')} sent!`);
+    setTimeout(() => window.close(), 500);
+  } catch (err) {
+    console.error('Send fill error:', err);
+    showNotification('Failed to fill credentials', true);
+  }
 }
 
 // ===================== CONNECTION UI =====================
@@ -113,7 +134,6 @@ async function requestCredentialsFromDesktop() {
       reject(new Error('Timeout waiting for credentials'));
     }, 5000);
     
-    // Send message to background script to request credentials (Firefox uses callbacks or promises)
     runtime.sendMessage({ type: 'GET_CREDENTIALS_FROM_DESKTOP' }).then(response => {
       clearTimeout(timeout);
       if (response && response.success) {
@@ -131,7 +151,6 @@ async function requestCredentialsFromDesktop() {
 // ===================== CHECK CURRENT VAULT STATUS =====================
 async function checkCurrentVaultStatus() {
   try {
-    // First check if we have stored vault status
     const result = await storage.local.get(['aurasafe_vault_status', 'aurasafe_credentials']);
     
     if (result.aurasafe_vault_status) {
@@ -218,7 +237,7 @@ function renderEntries() {
   }
 
   elements.entriesContainer.innerHTML = filteredEntries.map(entry => `
-    <div class="entry-item" data-id="${escapeHtml(entry.id)}">
+    <div class="entry-item" data-id="${escapeHtml(entry.id)}" data-entry='${JSON.stringify(entry).replace(/'/g, "\\'")}'>
       <div class="entry-title">
         <span>🔑</span>
         <span>${escapeHtml(entry.title || entry.name || 'Untitled')}</span>
@@ -273,6 +292,28 @@ function attachButtonEventListeners(entries) {
       }
     };
   });
+
+  // Add click handler for entry items to set current entry for manual fill
+  document.querySelectorAll('.entry-item').forEach(item => {
+    item.onclick = (e) => {
+      if (e.target.tagName !== 'BUTTON') {
+        const entryData = item.getAttribute('data-entry');
+        if (entryData) {
+          try {
+            currentEntry = JSON.parse(entryData);
+            showNotification(`Selected: ${currentEntry.title || currentEntry.name || 'Entry'}`);
+            // Highlight selected entry
+            document.querySelectorAll('.entry-item').forEach(el => {
+              el.style.border = '1px solid transparent';
+            });
+            item.style.border = '1px solid #4caf50';
+          } catch (err) {
+            console.error('Failed to parse entry', err);
+          }
+        }
+      }
+    };
+  });
 }
 
 // ===================== LOAD ENTRIES =====================
@@ -300,18 +341,59 @@ async function loadEntries() {
   }
 }
 
+// ===================== MANUAL FILL BUTTON EVENT LISTENERS =====================
+function setupManualFillButtons() {
+  const fillUsernameBtn = document.getElementById('fillUsername');
+  const fillPasswordBtn = document.getElementById('fillPassword');
+  const fillBothBtn = document.getElementById('fillBoth');
+
+  if (fillUsernameBtn) {
+    fillUsernameBtn.addEventListener('click', () => {
+      if (currentEntry && currentEntry.username) {
+        sendFill('FILL_USERNAME', { username: currentEntry.username });
+      } else {
+        showNotification('No username available or no entry selected', true);
+      }
+    });
+  }
+
+  if (fillPasswordBtn) {
+    fillPasswordBtn.addEventListener('click', () => {
+      if (currentEntry && currentEntry.password) {
+        sendFill('FILL_PASSWORD', { password: currentEntry.password });
+      } else {
+        showNotification('No password available or no entry selected', true);
+      }
+    });
+  }
+
+  if (fillBothBtn) {
+    fillBothBtn.addEventListener('click', () => {
+      if (currentEntry && currentEntry.username && currentEntry.password) {
+        sendFill('FILL_BOTH', {
+          username: currentEntry.username,
+          password: currentEntry.password
+        });
+      } else if (currentEntry && (currentEntry.username || currentEntry.password)) {
+        showNotification('Incomplete credentials for this entry', true);
+      } else {
+        showNotification('No entry selected or missing credentials', true);
+      }
+    });
+  }
+}
+
 // ===================== EVENTS =====================
 if (elements.lockBtn) {
   elements.lockBtn.addEventListener('click', async () => {
     if (vaultUnlocked) {
-      // Lock the vault
       runtime.sendMessage({ type: 'LOCK_VAULT' });
       updateVaultUI(false);
       currentEntries = [];
+      currentEntry = null;
       renderEntries();
       showNotification('Vault locked');
     } else {
-      // Unlock - request credentials from desktop
       showNotification('Requesting credentials from desktop...');
       
       try {
@@ -361,13 +443,11 @@ storage.onChanged.addListener((changes, area) => {
     renderEntries();
   }
   
-  // Listen for connection status changes
   if (area === 'local' && changes.aurasafe_connection_status) {
     const status = changes.aurasafe_connection_status.newValue?.status || 'disconnected';
     updateConnectionUI(status);
   }
   
-  // Listen for vault status changes
   if (area === 'local' && changes.aurasafe_vault_status) {
     const isUnlocked = changes.aurasafe_vault_status.newValue?.unlocked || false;
     updateVaultUI(isUnlocked);
@@ -375,6 +455,7 @@ storage.onChanged.addListener((changes, area) => {
       loadEntries();
     } else {
       currentEntries = [];
+      currentEntry = null;
       renderEntries();
     }
   }
@@ -386,7 +467,6 @@ runtime.onMessage.addListener((message) => {
     updateConnectionUI(message.payload?.status || 'disconnected');
   }
 
-  // Listen for vault status changes from background
   if (message.type === 'VAULT_STATUS_CHANGED') {
     console.log('[Popup] Status update received:', message.payload);
     updateVaultUI(message.payload?.unlocked || false);
@@ -394,11 +474,11 @@ runtime.onMessage.addListener((message) => {
       loadEntries();
     } else {
       currentEntries = [];
+      currentEntry = null;
       renderEntries();
     }
   }
   
-  // Handle credentials pushed from background
   if (message.type === 'CREDENTIALS_UPDATED') {
     if (message.payload && message.payload.length > 0) {
       updateVaultUI(true);
@@ -411,25 +491,20 @@ runtime.onMessage.addListener((message) => {
 // ===================== INIT =====================
 async function init() {
   try {
-    // Get connection status (always show as checking initially)
     updateConnectionUI('connecting');
     
-    // Try to load credentials from storage first
     const storageResult = await storage.local.get(['aurasafe_credentials', 'aurasafe_vault_status']);
     
     if (storageResult.aurasafe_credentials && storageResult.aurasafe_credentials.length > 0) {
-      // We have credentials, vault is unlocked
       updateVaultUI(true);
       currentEntries = storageResult.aurasafe_credentials;
       renderEntries();
       updateConnectionUI('connected');
       console.log(`✅ Loaded ${currentEntries.length} credentials from storage`);
     } else {
-      // No credentials, try to fetch fresh from desktop
       updateVaultUI(false);
       updateConnectionUI('connected');
       
-      // Request fresh data from background
       try {
         const response = await runtime.sendMessage({ type: 'REFRESH_FROM_DESKTOP' });
         if (response && response.success) {
@@ -440,16 +515,20 @@ async function init() {
             renderEntries();
             showNotification(`✅ Loaded ${currentEntries.length} credentials`);
           } else {
-            await loadEntries(); // Show empty state
+            await loadEntries();
           }
         } else {
-          await loadEntries(); // Show empty state
+          await loadEntries();
         }
       } catch (err) {
         console.log('Refresh failed:', err);
-        await loadEntries(); // Show empty state
+        await loadEntries();
       }
     }
+    
+    // Setup manual fill buttons after DOM is ready
+    setupManualFillButtons();
+    
   } catch (e) {
     console.error('Init error:', e);
     updateConnectionUI('disconnected');

@@ -57,11 +57,10 @@ async function fetchStatus() {
   return null;
 }
 
-
-// Add this to background.js to discover the correct port
+// ===================== DISCOVER DESKTOP PORT =====================
 async function discoverDesktopPort() {
   // Try common ports
-  const ports = [3000, 3001, 3002, 8080];
+  const ports = [3456, 3000, 3001, 3002, 8080];
   for (const port of ports) {
     try {
       const response = await fetch(`http://localhost:${port}/api/status`);
@@ -74,6 +73,17 @@ async function discoverDesktopPort() {
   }
   return false;
 }
+
+// ✅ NEW: Clean up stored tab data when tab is closed
+chrome.tabs.onRemoved.addListener((tabId) => {
+  chrome.storage.local.get(['lastOpenedTabId'], (data) => {
+    if (data.lastOpenedTabId === tabId) {
+      chrome.storage.local.remove(['lastOpenedTabId', 'lastEntry', 'lastOpenedUrl']);
+      log('info', `Cleaned up stored data for closed tab: ${tabId}`);
+    }
+  });
+});
+
 // ===================== START POLLING =====================
 function startPolling() {
   if (pollingInterval) clearInterval(pollingInterval);
@@ -133,12 +143,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 chrome.runtime.onInstalled.addListener(() => {
   log('info', 'Extension installed - starting polling');
   startPolling();
-});
-
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.type === 'OPEN_SETTINGS') {
-    // send signal to desktop app (via your existing bridge)
-  }
 });
 
 chrome.runtime.onStartup.addListener(() => {

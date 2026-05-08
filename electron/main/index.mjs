@@ -1,5 +1,5 @@
 // ===================== CORE IMPORTS =====================
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { broadcastVaultStatus } from './server.js';
 
 
@@ -19,6 +19,7 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import { WebSocketServer } from 'ws';
 import crypto from 'crypto';
+import cors from 'cors';  // ADDED cors import
 
 const require = createRequire(import.meta.url);
 
@@ -84,14 +85,55 @@ async function loadExtensionSync() {
 // ===================== GLOBAL STATE =====================
 let mainWindow;
 let server;
+let autofillServer;  // ADDED autofill server reference
 let db;
 let wsServer;
 let vaultUnlocked = false;
 let masterKey = null;
-let extensionSyncInitialized = false; // 🆕 Track sync initialization
+let extensionSyncInitialized = false;
+let pendingAutofill = null;  // ADDED pending autofill storage
 
 // ===================== PAIRING SECRETS STORE =====================
 const pairingSecrets = new Map();
+
+// ===================== AUTOFILL SERVER =====================
+function startAutofillServer() {
+  const autofillApp = express();
+  
+  autofillApp.use(cors());
+  autofillApp.use(express.json());
+  
+  // Get pending autofill data
+  autofillApp.get('/pending-autofill', (req, res) => {
+    if (!pendingAutofill) {
+      return res.json({ success: false });
+    }
+    
+    res.json({
+      success: true,
+      data: pendingAutofill
+    });
+  });
+  
+  // Store autofill data
+  autofillApp.post('/set-autofill', (req, res) => {
+    pendingAutofill = req.body;
+    console.log('[AuraSafe] Pending autofill stored:', pendingAutofill);
+    res.json({ success: true });
+  });
+  
+  // Consume (clear) autofill data
+  autofillApp.post('/consume-autofill', (req, res) => {
+    pendingAutofill = null;
+    console.log('[AuraSafe] Pending autofill consumed');
+    res.json({ success: true });
+  });
+  
+  const AUTOFILL_PORT = 47392;
+  autofillServer = autofillApp.listen(AUTOFILL_PORT, () => {
+    console.log(`[AuraSafe] Autofill server running on http://localhost:${AUTOFILL_PORT}`);
+  });
+}
 
 // ===================== WEBSOCKET SERVER (DISABLED - USING HTTP INSTEAD) =====================
 // WebSocket server code has been removed in favor of HTTP API endpoints
@@ -289,6 +331,9 @@ app.whenReady().then(async () => {
 
     // 🆕 Initialize Chrome Extension Sync
     await initializeExtensionSync();
+    
+    // 🆕 Start Autofill Server
+    startAutofillServer();
 
     const outPath = path.join(__dirname, '../../out');
 
@@ -319,6 +364,40 @@ ipcMain.handle('vault:isInitialized', async () => {
     console.error('[vault:isInitialized] Error:', error);
     return { initialized: false, error: error.message };
   }
+});
+
+// ===================== ADD THIS NEW IPC HANDLER =====================
+// Add this after your other ipcMain handlers (around line 400-500)
+
+// Open external URL in default browser
+ipcMain.handle('open-external', async (event, url) => {
+  try {
+    console.log('[open-external] Opening URL in default browser:', url);
+    await shell.openExternal(url);
+    return { success: true };
+  } catch (err) {
+    console.error('[open-external] Failed:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+// IPC handler to get pending autofill data
+ipcMain.handle('get-pending-autofill', async () => {
+  return pendingAutofill;
+});
+
+// IPC handler to set pending autofill data
+ipcMain.handle('set-pending-autofill', async (event, data) => {
+  pendingAutofill = data;
+  console.log('[IPC] Pending autofill stored:', data);
+  return { success: true };
+});
+
+// IPC handler to consume pending autofill data
+ipcMain.handle('consume-pending-autofill', async () => {
+  pendingAutofill = null;
+  console.log('[IPC] Pending autofill consumed');
+  return { success: true };
 });
 
 ipcMain.handle('vault:init', async (event, masterPassword) => {
@@ -452,51 +531,123 @@ ipcMain.handle('vault:saveEntry', async (event, entry) => {
     const db = await getDatabase();
     const now = Date.now();
 
-    const safeEntry = {
-      id: entry?.id,
-      title: entry?.title || entry?.name || 'Untitled',
-      username: entry?.username || '',
-      password: entry?.password || '',
-      url: entry?.url || '',
-      notes: entry?.notes || '',
-      category: entry?.category || 'credential',
-      totpSecret: entry?.totpSecret || '',
-      passkeyId: entry?.passkeyId || '',
-    };
+    // Prepare values for all 34 columns
+    const id = entry?.id || crypto.randomBytes(16).toString('hex');
+    const isUpdate = !!entry?.id;
 
-    if (safeEntry.id) {
+    const values = [
+      id,
+      entry?.title || entry?.name || 'Untitled',
+      entry?.username || null,
+      entry?.password || null,
+      entry?.url || null,
+      entry?.notes || null,
+      entry?.category || entry?.type || 'credential',
+      entry?.created_at || now,
+      now,  // updated_at
+      entry?.totpSecret || null,
+      entry?.passkeyId || null,
+      entry?.addressLine || entry?.addressLine1 || null,
+      entry?.city || null,
+      entry?.state || null,
+      entry?.zip || null,
+      entry?.country || null,
+      entry?.cardNumber || null,
+      entry?.cvv || null,
+      entry?.expiry || null,
+      entry?.bankName || null,
+      entry?.accountNumber || null,
+      entry?.routingNumber || null,
+      entry?.licenseNumber || null,
+      entry?.dob || null,
+      entry?.phone || null,
+      entry?.email || null,
+      entry?.company || null,
+      entry?.accountType || null,
+      entry?.swiftCode || null,
+      entry?.branchAddress || null,
+      entry?.licenseClass || null,
+      entry?.endorsements || null,
+      entry?.restrictions || null,
+      entry?.issueDate || null,
+      entry?.addressLine2 || null
+    ];
+
+    if (isUpdate) {
+      // UPDATE statement for existing entry
       await db.run(
         `UPDATE vault_entries SET 
           title = ?, username = ?, password = ?, url = ?, notes = ?, 
-          category = ?, totpSecret = ?, passkeyId = ?, updated_at = ?
+          category = ?, created_at = ?, updated_at = ?,
+          totpSecret = ?, passkeyId = ?, addressLine = ?, city = ?, state = ?, 
+          zip = ?, country = ?, cardNumber = ?, cvv = ?, expiry = ?, 
+          bankName = ?, accountNumber = ?, routingNumber = ?, licenseNumber = ?, 
+          dob = ?, phone = ?, email = ?, company = ?, accountType = ?, 
+          swiftCode = ?, branchAddress = ?, licenseClass = ?, endorsements = ?, 
+          restrictions = ?, issueDate = ?, addressLine2 = ?
          WHERE id = ?`,
         [
-          safeEntry.title, safeEntry.username, safeEntry.password,
-          safeEntry.url, safeEntry.notes, safeEntry.category,
-          safeEntry.totpSecret, safeEntry.passkeyId, now, safeEntry.id
+          entry?.title || entry?.name || 'Untitled',
+          entry?.username || null,
+          entry?.password || null,
+          entry?.url || null,
+          entry?.notes || null,
+          entry?.category || entry?.type || 'credential',
+          entry?.created_at || now,
+          now,
+          entry?.totpSecret || null,
+          entry?.passkeyId || null,
+          entry?.addressLine || entry?.addressLine1 || null,
+          entry?.city || null,
+          entry?.state || null,
+          entry?.zip || null,
+          entry?.country || null,
+          entry?.cardNumber || null,
+          entry?.cvv || null,
+          entry?.expiry || null,
+          entry?.bankName || null,
+          entry?.accountNumber || null,
+          entry?.routingNumber || null,
+          entry?.licenseNumber || null,
+          entry?.dob || null,
+          entry?.phone || null,
+          entry?.email || null,
+          entry?.company || null,
+          entry?.accountType || null,
+          entry?.swiftCode || null,
+          entry?.branchAddress || null,
+          entry?.licenseClass || null,
+          entry?.endorsements || null,
+          entry?.restrictions || null,
+          entry?.issueDate || null,
+          entry?.addressLine2 || null,
+          id
         ]
       );
-      // 🆕 Sync to extension after update
-      await syncToExtensionOnChange();
-      return { ...safeEntry, updatedAt: now };
+    } else {
+      // INSERT statement for new entry
+      await db.run(
+        `INSERT INTO vault_entries (
+          id, title, username, password, url, notes, category, created_at, updated_at,
+          totpSecret, passkeyId, addressLine, city, state, zip, country,
+          cardNumber, cvv, expiry, bankName, accountNumber, routingNumber,
+          licenseNumber, dob, phone, email, company, accountType, swiftCode,
+          branchAddress, licenseClass, endorsements, restrictions, issueDate, addressLine2
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        values
+      );
     }
 
-    const id = crypto.randomBytes(16).toString('hex');
-    await db.run(
-      `INSERT INTO vault_entries (
-        id, title, username, password, url, notes, category, totpSecret, passkeyId, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id, safeEntry.title, safeEntry.username, safeEntry.password,
-        safeEntry.url, safeEntry.notes, safeEntry.category,
-        safeEntry.totpSecret, safeEntry.passkeyId, now, now
-      ]
-    );
-
-    // 🆕 Sync to extension after insert
+    // Sync to extension after save
     await syncToExtensionOnChange();
 
-    return { ...safeEntry, id, createdAt: now, updatedAt: now };
+    return { 
+      success: true, 
+      id: id,
+      ...entry,
+      updatedAt: now,
+      createdAt: entry?.created_at || now
+    };
   } catch (error) {
     console.error('[vault:saveEntry] Error:', error);
     throw error;
@@ -896,6 +1047,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', async () => {
   try {
     server?.close?.();
+    autofillServer?.close?.();  // Close autofill server on quit
     if (db) {
       await db.close();
       db = null;

@@ -17,44 +17,64 @@ const categoryFields = {
     { label: 'Service Name', name: 'title', type: 'text', required: true },
     { label: 'Username/Email', name: 'username', type: 'text' },
     { label: 'Passkey ID', name: 'passkeyId', type: 'text', placeholder: 'Credential ID from service' },
-    { label: 'Service URL', name: 'url', type: 'url', placeholder: 'https://github.com' },
+    { label: 'Service URL', name: 'url', type: 'url', placeholder: 'https://example.com' },
     { label: 'Notes', name: 'notes', type: 'text' },
   ],
   contact: [
     { label: 'Full Name', name: 'title', type: 'text', required: true },
-    { label: 'Company', name: 'company', type: 'text' },
-    { label: 'Phone', name: 'phone', type: 'text' },
-    { label: 'Email', name: 'email', type: 'email' },
-    { label: 'Address Line 1', name: 'addressLine1', type: 'text' },
-    { label: 'Address Line 2', name: 'addressLine2', type: 'text' },
+    { label: 'Address Line 1', name: 'addressLine', type: 'text', placeholder: 'Street address' },
+    { label: 'Address Line 2', name: 'addressLine2', type: 'text', placeholder: 'Apartment, suite, etc. (optional)' },
     { label: 'City', name: 'city', type: 'text' },
     { label: 'State', name: 'state', type: 'text' },
     { label: 'ZIP Code', name: 'zip', type: 'text' },
     { label: 'Country', name: 'country', type: 'text' },
+    { label: 'Phone', name: 'phone', type: 'tel', placeholder: '(123) 456-7890' },
+    { label: 'Email', name: 'email', type: 'email' },
+    { label: 'Company', name: 'company', type: 'text' },
     { label: 'Notes', name: 'notes', type: 'text' },
   ],
   creditCard: [
     { label: 'Cardholder Name', name: 'title', type: 'text', required: true },
-    { label: 'Card Number', name: 'cardNumber', type: 'text' },
+    { label: 'Card Number', name: 'cardNumber', type: 'text', placeholder: '1234 5678 9012 3456' },
     { label: 'Expiry Date', name: 'expiry', type: 'text', placeholder: 'MM/YY' },
-    { label: 'CVV', name: 'cvv', type: 'password' },
+    { label: 'CVV', name: 'cvv', type: 'password', placeholder: '123' },
     { label: 'Notes', name: 'notes', type: 'text' },
   ],
   bankAccount: [
     { label: 'Account Holder', name: 'title', type: 'text', required: true },
-    { label: 'Bank Name', name: 'bankName', type: 'text' },
-    { label: 'Account Number', name: 'accountNumber', type: 'text' },
-    { label: 'Routing Number', name: 'routingNumber', type: 'text' },
+    { label: 'Bank Name', name: 'bankName', type: 'text', placeholder: 'Bank of America' },
+    { label: 'Account Number', name: 'accountNumber', type: 'text', placeholder: '123456789' },
+    { label: 'Routing Number', name: 'routingNumber', type: 'text', placeholder: '021000021' },
+    { label: 'Account Type', name: 'accountType', type: 'text', placeholder: 'Checking / Savings' },
+    { label: 'SWIFT/BIC Code', name: 'swiftCode', type: 'text', placeholder: 'For international transfers (optional)' },
+    { label: 'Branch Address', name: 'branchAddress', type: 'text', placeholder: 'Bank branch location (optional)' },
     { label: 'Notes', name: 'notes', type: 'text' },
   ],
   driverLicense: [
     { label: 'Full Name', name: 'title', type: 'text', required: true },
-    { label: 'License Number', name: 'licenseNumber', type: 'text' },
-    { label: 'State', name: 'state', type: 'text' },
-    { label: 'Expiration Date', name: 'expiry', type: 'text' },
-    { label: 'Date of Birth', name: 'dob', type: 'text' },
+    { label: 'License Number', name: 'licenseNumber', type: 'text', placeholder: 'DL12345678' },
+    { label: 'State', name: 'state', type: 'text', placeholder: 'CA' },
+    { label: 'Expiration Date', name: 'expiry', type: 'text', placeholder: 'MM/DD/YYYY' },
+    { label: 'Date of Birth', name: 'dob', type: 'text', placeholder: 'MM/DD/YYYY' },
+    { label: 'Class', name: 'licenseClass', type: 'text', placeholder: 'C, A, B, M1, etc.' },
+    { label: 'Endorsements', name: 'endorsements', type: 'text', placeholder: 'Motorcycle, Hazmat, etc. (optional)' },
+    { label: 'Restrictions', name: 'restrictions', type: 'text', placeholder: 'Corrective lenses, etc. (optional)' },
+    { label: 'Issue Date', name: 'issueDate', type: 'text', placeholder: 'MM/DD/YYYY' },
     { label: 'Notes', name: 'notes', type: 'text' },
   ],
+};
+
+// Map sidebar category names to field type names
+const getEntryTypeFromCategory = (category) => {
+  const categoryMap = {
+    'passwords': 'credential',
+    'passkeys': 'passkey',
+    'addresses': 'contact',
+    'paymentCards': 'creditCard',
+    'bankAccounts': 'bankAccount',
+    'driverLicenses': 'driverLicense',
+  };
+  return categoryMap[category] || 'credential';
 };
 
 // Inject styles on client side only
@@ -98,8 +118,8 @@ export default function EntryModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
 
-  // Determine entry type
-  const entryType = entry?.type || (category === 'passkeys' ? 'passkey' : 'credential');
+  // Determine entry type from category
+  const entryType = entry?.type || getEntryTypeFromCategory(category);
   const fields = categoryFields[entryType] || categoryFields.credential;
 
   // Load entry data when modal opens
@@ -138,6 +158,7 @@ export default function EntryModal({
     try {
       const saveData = {
         ...formData,
+        category: entryType,
         type: entryType,
         updated_at: Date.now(),
       };
@@ -170,8 +191,19 @@ export default function EntryModal({
     return '•'.repeat(Math.min(notes.length, 20));
   };
 
-  // Check if this is a passkey entry
-  const isPasskey = entryType === 'passkey';
+  // Get display title for the modal
+  const getModalTitle = () => {
+    const titleMap = {
+      'passwords': 'Password',
+      'passkeys': 'Passkey',
+      'addresses': 'Address',
+      'paymentCards': 'Payment Card',
+      'bankAccounts': 'Bank Account',
+      'driverLicenses': "Driver's License",
+    };
+    const baseTitle = titleMap[category] || 'Entry';
+    return entry?.id ? `Edit ${baseTitle}` : `Add ${baseTitle}`;
+  };
 
   if (!isOpen) return null;
 
@@ -179,9 +211,7 @@ export default function EntryModal({
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.modal} onClick={e => e.stopPropagation()}>
         <div style={styles.header}>
-          <h2 style={styles.title}>
-            {entry?.id ? 'Edit Entry' : `Add ${category === 'passkeys' ? 'Passkey' : category}`}
-          </h2>
+          <h2 style={styles.title}>{getModalTitle()}</h2>
           <button onClick={onClose} style={styles.closeBtn} className="close-btn">×</button>
         </div>
 
@@ -193,7 +223,7 @@ export default function EntryModal({
                 {field.required && <span style={styles.required}>*</span>}
               </label>
 
-              {field.name === 'password' && !isPasskey ? (
+              {field.name === 'password' && entryType === 'credential' ? (
                 <div style={styles.passwordContainer}>
                   <input
                     name={field.name}
@@ -248,7 +278,7 @@ export default function EntryModal({
                     </button>
                   )}
                 </div>
-              ) : field.name === 'url' ? (
+              ) : field.name === 'url' || field.name === 'serviceUrl' ? (
                 <div>
                   <input
                     name={field.name}
@@ -259,7 +289,7 @@ export default function EntryModal({
                     style={styles.input}
                   />
                   <div style={styles.urlHint}>
-                    💡 Add the website URL to enable the "Launch" button
+                    💡 Add the website URL to enable auto-fill and quick launch
                   </div>
                 </div>
               ) : (
@@ -314,7 +344,7 @@ const styles = {
     borderRadius: '16px',
     padding: '28px',
     width: '90%',
-    maxWidth: '520px',
+    maxWidth: '560px',
     maxHeight: '90vh',
     overflowY: 'auto',
     boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',

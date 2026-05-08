@@ -3,6 +3,10 @@ import { useState, useEffect } from 'react';
 import EntryModal from './EntryModal';
 import PasskeyModal from './PasskeyModal';
 import TOTPDisplay from './TOTPDisplay';
+// Import separate modals for specific categories
+import PasswordsModal from './PasswordsModal';
+import PaymentCardsModal from './PaymentCardsModal';
+import AddressesModal from './AddressesModal';
 
 // Inject styles on client side only
 if (typeof document !== 'undefined') {
@@ -30,804 +34,1088 @@ if (typeof document !== 'undefined') {
         text-decoration: underline;
         cursor: pointer;
     }
+    .delete-icon:hover {
+        transform: scale(1.1);
+        background: #6B7280 !important;
+    }
   `;
   document.head.appendChild(styleSheet);
 }
 
 const categoryToType = {
-    all: null,
-    passwords: 'credential',
-    passkeys: 'passkey',
-    addresses: 'contact',
-    paymentCards: 'creditCard',
-    bankAccounts: 'bankAccount',
-    driverLicenses: 'driverLicense',
-    help: null,
+  all: null,
+  passwords: 'credential',
+  passkeys: 'passkey',
+  addresses: 'contact',
+  paymentCards: 'creditCard',
+  bankAccounts: 'bankAccount',
+  driverLicenses: 'driverLicense',
+  help: null,
 };
 
 // Group titles and icons for display
 const groupConfig = {
-    credential: { title: '🔐 Credentials', icon: '🔑', order: 1 },
-    contact: { title: '📍 Addresses', icon: '🏠', order: 2 },
-    creditCard: { title: '💳 Payment Cards', icon: '💳', order: 3 },
-    bankAccount: { title: '🏦 Bank Accounts', icon: '🏦', order: 4 },
-    driverLicense: { title: '🪪 Driver\'s Licenses', icon: '🪪', order: 5 },
-    passkey: { title: '🔐 Passkeys', icon: '🔐', order: 6 },
+  credential: { title: '🔐 Credentials', icon: '🔑', order: 1 },
+  contact: { title: '📍 Addresses', icon: '🏠', order: 2 },
+  creditCard: { title: '💳 Payment Cards', icon: '💳', order: 3 },
+  bankAccount: { title: '🏦 Bank Accounts', icon: '🏦', order: 4 },
+  driverLicense: { title: '🪪 Driver\'s Licenses', icon: '🪪', order: 5 },
+  passkey: { title: '🔐 Passkeys', icon: '🔐', order: 6 },
 };
 
 export default function CategoryModal({
-    isOpen,
-    onClose,
-    category,
-    api,
+  isOpen,
+  onClose,
+  category,
+  api,
 }) {
-    const [entries, setEntries] = useState([]);
-    const [groupedEntries, setGroupedEntries] = useState({});
-    const [loading, setLoading] = useState(false);
-    const [showEntryModal, setShowEntryModal] = useState(false);
-    const [editingEntry, setEditingEntry] = useState(null);
-    const [isSaving, setIsSaving] = useState(false);
-    const [selectedIds, setSelectedIds] = useState([]);
-    const [copiedField, setCopiedField] = useState(null);
-    const [showPassword, setShowPassword] = useState({});
-    const [autoFillEnabled, setAutoFillEnabled] = useState({});
+  // ===================== SEPARATE MODAL ROUTING =====================
+  // Route to dedicated modal components for specific categories
+  if (category === 'passwords') {
+    return <PasswordsModal isOpen={isOpen} onClose={onClose} api={api} />;
+  }
 
-    const entryType = categoryToType[category];
+  if (category === 'paymentCards') {
+    return <PaymentCardsModal isOpen={isOpen} onClose={onClose} api={api} />;
+  }
 
-    const fetchEntries = async () => {
-        if (!api || category === 'help') return;
+  if (category === 'addresses') {
+    return <AddressesModal isOpen={isOpen} onClose={onClose} api={api} />;
+  }
 
-        setLoading(true);
-        try {
-            const all = (await api.getVaultEntries()) || [];
-            
-            // Load auto-fill preferences from localStorage
-            const savedAutoFill = localStorage.getItem('aurasafe_autofill_prefs');
-            const autoFillPrefs = savedAutoFill ? JSON.parse(savedAutoFill) : {};
-            setAutoFillEnabled(autoFillPrefs);
-            
-            if (category === 'all') {
-                // Group entries by type for "All Items" view
-                const grouped = {};
-                all.forEach(entry => {
-                    const type = entry.type || 'credential';
-                    if (!grouped[type]) {
-                        grouped[type] = [];
-                    }
-                    grouped[type].push(entry);
-                });
-                setGroupedEntries(grouped);
-                setEntries(all);
-            } else {
-                const filtered = all.filter((e) => e.type === entryType);
-                setEntries(filtered);
-                setGroupedEntries({});
-            }
-        } catch (err) {
-            console.error(err);
-            setEntries([]);
-            setGroupedEntries({});
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        if (isOpen) fetchEntries();
-    }, [isOpen, category]);
-
-    // Copy URL to clipboard function
-    const copyUrlToClipboard = async (url, entryId) => {
-        if (!url) return;
-        try {
-            await navigator.clipboard.writeText(url);
-            setCopiedField(`url_${entryId}`);
-            setTimeout(() => setCopiedField(null), 2000);
-        } catch (err) {
-            console.error('Failed to copy URL:', err);
-        }
-    };
-
-    // Launch website function
-    const launchWebsite = async (url, entryId) => {
-        if (!url) return;
-        
-        // Ensure URL has protocol
-        let finalUrl = url;
-        if (!url.startsWith('http://') && !url.startsWith('https://')) {
-            finalUrl = 'https://' + url;
-        }
-        
-        // Open the URL in default browser
-        window.open(finalUrl, '_blank');
-        
-        // If auto-fill is enabled for this entry, attempt to auto-fill when page loads
-        if (autoFillEnabled[entryId]) {
-            // Store credentials for auto-fill
-            const entry = entries.find(e => e.id === entryId) || 
-                          Object.values(groupedEntries).flat().find(e => e.id === entryId);
-            
-            if (entry && (entry.username || entry.email)) {
-                localStorage.setItem('aurasafe_pending_autofill', JSON.stringify({
-                    entryId: entry.id,
-                    username: entry.username || entry.email || '',
-                    password: entry.password || '',
-                    url: finalUrl,
-                    timestamp: Date.now()
-                }));
-                
-                // Show notification that auto-fill is pending
-                if (typeof document !== 'undefined') {
-                    const notification = document.createElement('div');
-                    notification.textContent = '🔐 Auto-fill ready: When the page loads, click the AuraSafe extension icon to fill credentials.';
-                    notification.style.cssText = `
-                        position: fixed;
-                        bottom: 20px;
-                        right: 20px;
-                        background: #2e7d32;
-                        color: white;
-                        padding: 12px 20px;
-                        border-radius: 8px;
-                        z-index: 100000;
-                        font-size: 14px;
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                        animation: slideIn 0.3s ease;
-                    `;
-                    document.body.appendChild(notification);
-                    setTimeout(() => notification.remove(), 5000);
-                }
-            }
-        }
-    };
-    
-    // Toggle auto-fill for an entry
-    const toggleAutoFill = (entryId, e) => {
-        e.stopPropagation();
-        const newValue = !autoFillEnabled[entryId];
-        const updatedPrefs = { ...autoFillEnabled, [entryId]: newValue };
-        setAutoFillEnabled(updatedPrefs);
-        localStorage.setItem('aurasafe_autofill_prefs', JSON.stringify(updatedPrefs));
-    };
-
-    // Mask password function
-    const maskPassword = (password) => {
-        if (!password) return '';
-        if (password.length <= 4) return '•'.repeat(password.length);
-        return '•'.repeat(8);
-    };
-
-    // Mask username function (show first 2 and last 2 characters)
-    const maskUsername = (username) => {
-        if (!username) return '';
-        if (username.length <= 4) return username;
-        return username.substring(0, 2) + '•'.repeat(Math.min(username.length - 4, 6)) + username.substring(username.length - 2);
-    };
-
-    // Toggle password visibility
-    const togglePasswordVisibility = (id, e) => {
-        e.stopPropagation();
-        setShowPassword(prev => ({ ...prev, [id]: !prev[id] }));
-    };
-
-    // Copy to clipboard function
-    const copyToClipboard = async (text, fieldName, entryId) => {
-        if (!text) return;
-        try {
-            await navigator.clipboard.writeText(text);
-            setCopiedField(`${fieldName}_${entryId}`);
-            setTimeout(() => setCopiedField(null), 2000);
-        } catch (err) {
-            console.error('Failed to copy:', err);
-        }
-    };
-
-    const handleAdd = () => {
-        setEditingEntry(null);
-        setShowEntryModal(true);
-    };
-
-    const handleEditClick = (clickedEntry) => {
-        setEditingEntry(clickedEntry);
-        setShowEntryModal(true);
-    };
-
-    const handleSaveEntry = async (entryData) => {
-        if (isSaving || !api) return;
-
-        setIsSaving(true);
-
-        try {
-            await api.saveVaultEntry(entryData);
-            setShowEntryModal(false);
-            setEditingEntry(null);
-            await fetchEntries();
-        } catch (err) {
-            console.error('Save failed:', err);
-            alert('Failed to save entry: ' + err.message);
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    const handleCloseEntryModal = () => {
-        if (isSaving) return;
-        setShowEntryModal(false);
-        setEditingEntry(null);
-    };
-
-    const toggleSelectAll = () => {
-        if (selectedIds.length === entries.length) {
-            setSelectedIds([]);
-        } else {
-            setSelectedIds(entries.map((e) => e.id));
-        }
-    };
-
-    const toggleSelectOne = (id) => {
-        setSelectedIds((prev) =>
-            prev.includes(id)
-                ? prev.filter((x) => x !== id)
-                : [...prev, id]
-        );
-    };
-
-    const handleBulkDelete = async () => {
-        if (!api || selectedIds.length === 0) return;
-
-        if (window.confirm(`Delete ${selectedIds.length} selected item(s)?`)) {
-            try {
-                await Promise.all(
-                    selectedIds.map((id) => api.deleteVaultEntry(id))
-                );
-                setSelectedIds([]);
-                await fetchEntries();
-            } catch (err) {
-                console.error('Bulk delete failed:', err);
-                alert('Failed to delete entries: ' + err.message);
-            }
-        }
-    };
-
-    // Render a single entry item
-    const renderEntryItem = (e) => (
-        <div key={e.id} style={styles.item}>
-            <input
-                type="checkbox"
-                checked={selectedIds.includes(e.id)}
-                onChange={() => toggleSelectOne(e.id)}
-                style={styles.checkbox}
-            />
-
-            <div style={{ flex: 1 }}>
-                <div style={styles.itemTitle}>
-                    {e.title || 'Untitled Entry'}
-                </div>
-                <div style={styles.subText}>
-                    {/* Credential fields */}
-                    {e.username && (
-                        <span
-                            className="copyable-field"
-                            style={styles.copyableField}
-                            onClick={() => copyToClipboard(e.username, 'username', e.id)}
-                            title="Click to copy username"
-                        >
-                            👤 {maskUsername(e.username)}
-                            {copiedField === `username_${e.id}` && <span style={styles.copiedIndicator}> ✓ Copied!</span>}
-                        </span>
-                    )}
-                    {e.password && (
-                        <span style={styles.passwordWrapper}>
-                            <span
-                                className="copyable-field"
-                                style={styles.copyableField}
-                                onClick={() => copyToClipboard(e.password, 'password', e.id)}
-                                title="Click to copy password"
-                            >
-                                🔒 {showPassword[e.id] ? e.password : maskPassword(e.password)}
-                            </span>
-                            <button
-                                onClick={(event) => togglePasswordVisibility(e.id, event)}
-                                style={styles.eyeButton}
-                                className="eye-button"
-                                title={showPassword[e.id] ? "Hide password" : "Show password"}
-                            >
-                                {showPassword[e.id] ? '🙈' : '👁️'}
-                            </button>
-                            {copiedField === `password_${e.id}` && <span style={styles.copiedIndicator}> ✓ Copied!</span>}
-                        </span>
-                    )}
-                    {/* URL field - displays "URL" as clickable text that copies the actual URL */}
-                    {e.url && (
-                        <span style={styles.urlFieldWrapper}>
-                            <span
-                                className="url-link"
-                                style={styles.urlLink}
-                                onClick={() => copyUrlToClipboard(e.url, e.id)}
-                                title="Click to copy URL"
-                            >
-                                🔗 URL
-                            </span>
-                            {copiedField === `url_${e.id}` && <span style={styles.copiedIndicator}> ✓ Copied!</span>}
-                            <button
-                                onClick={() => launchWebsite(e.url, e.id)}
-                                style={styles.inlineLaunchBtn}
-                                title="Launch website"
-                            >
-                                Launch
-                            </button>
-                        </span>
-                    )}
-                    {/* Contact/Address fields */}
-                    {e.addressLine && (
-                        <span>📍 {e.addressLine}</span>
-                    )}
-                    {e.city && e.state && (
-                        <span>🏙️ {e.city}, {e.state}</span>
-                    )}
-                    {/* Credit Card fields */}
-                    {e.cardNumber && (
-                        <span>💳 ••••{e.cardNumber.slice(-4)}</span>
-                    )}
-                    {e.expiry && (
-                        <span>📅 {e.expiry}</span>
-                    )}
-                    {/* Bank Account fields */}
-                    {e.bankName && (
-                        <span>🏦 {e.bankName}</span>
-                    )}
-                    {e.accountNumber && (
-                        <span>🔢 ••••{e.accountNumber.slice(-4)}</span>
-                    )}
-                    {/* Driver License fields */}
-                    {e.licenseNumber && (
-                        <span>📄 License: {e.licenseNumber}</span>
-                    )}
-                    {e.dob && (
-                        <span>🎂 {e.dob}</span>
-                    )}
-                    {/* Passkey fields */}
-                    {e.type === 'passkey' && e.passkeyId && (
-                        <span
-                            className="copyable-field"
-                            style={styles.copyableField}
-                            onClick={() => copyToClipboard(e.passkeyId, 'passkeyId', e.id)}
-                            title="Click to copy passkey ID"
-                        >
-                            🔑 Passkey ID
-                            {copiedField === `passkeyId_${e.id}` && <span style={styles.copiedIndicator}> ✓ Copied!</span>}
-                        </span>
-                    )}
-                </div>
-                {/* TOTP Display */}
-                {e.totpSecret && (
-                    <div style={{ marginTop: '8px' }}>
-                        <TOTPDisplay secret={e.totpSecret} label="2FA Code" />
-                    </div>
-                )}
-            </div>
-
-            <div style={styles.actionButtons}>
-                {/* Auto-fill Toggle Button */}
-                {(e.type === 'credential' || e.type === 'passkey') && e.url && (
-                    <button
-                        onClick={(event) => toggleAutoFill(e.id, event)}
-                        style={{
-                            ...styles.autoFillBtn,
-                            background: autoFillEnabled[e.id] ? '#2e7d32' : '#4B5563',
-                        }}
-                        title={autoFillEnabled[e.id] ? "Auto-fill enabled - Click to disable" : "Auto-fill disabled - Click to enable"}
-                    >
-                        {autoFillEnabled[e.id] ? '🔓 Auto-fill ON' : '🔒 Auto-fill OFF'}
-                    </button>
-                )}
-                
-                <button
-                    onClick={() => handleEditClick(e)}
-                    style={styles.editBtn}
-                >
-                    Edit
-                </button>
-            </div>
-        </div>
-    );
-
-    // Render grouped entries for "All Items"
-    const renderGroupedEntries = () => {
-        // Sort groups by order
-        const sortedGroups = Object.keys(groupedEntries).sort((a, b) => {
-            const orderA = groupConfig[a]?.order || 999;
-            const orderB = groupConfig[b]?.order || 999;
-            return orderA - orderB;
-        });
-
-        return sortedGroups.map(groupType => {
-            const group = groupedEntries[groupType];
-            const config = groupConfig[groupType] || { title: groupType, icon: '📄' };
-            
-            return (
-                <div key={groupType} style={styles.groupSection}>
-                    <div style={styles.groupHeader}>
-                        <span style={styles.groupIcon}>{config.icon}</span>
-                        <h3 style={styles.groupTitle}>{config.title}</h3>
-                        <span style={styles.groupCount}>({group.length})</span>
-                    </div>
-                    <div style={styles.groupContent}>
-                        {group.map(entry => renderEntryItem(entry))}
-                    </div>
-                </div>
-            );
-        });
-    };
-
-    if (category === 'help') {
-        return (
-            <div style={styles.overlay} onClick={onClose}>
-                <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-                    <div style={styles.header}>
-                        <h2 style={styles.titleText}>Help & Support</h2>
-                        <button onClick={onClose} style={styles.closeBtn}>✕</button>
-                    </div>
-                    <div style={styles.content}>
-                        <p>Welcome to AuraSafe Help! Here are some resources:</p>
-                        <ul>
-                            <li><strong>Documentation:</strong> Getting Started Guide</li>
-                            <li><strong>FAQs:</strong> Frequently Asked Questions</li>
-                            <li><strong>Support:</strong> Contact Support</li>
-                        </ul>
-                        <p>For urgent issues, please email support@aurasafe.com.</p>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    // Handle Passkey category - opens the PasskeyModal
-    if (category === 'passkeys') {
-        return (
-            <PasskeyModal
-                isOpen={isOpen}
-                onClose={onClose}
-                api={api}
-            />
-        );
-    }
-
-    if (!isOpen) return null;
-
-    const categoryTitle = {
-        all: 'All Items',
-        passwords: 'Passwords',
-        passkeys: 'Passkeys',
-        addresses: 'Addresses',
-        paymentCards: 'Payment Cards',
-        bankAccounts: 'Bank Accounts',
-        driverLicenses: "Driver's Licenses",
-    }[category] || category;
-
-    const isAllItems = category === 'all';
-
+  // Help category
+  if (category === 'help') {
     return (
-        <>
-            <div style={styles.overlay} onClick={onClose}>
-                <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-                    <div style={styles.header}>
-                        <div style={styles.titleWrap}>
-                            <h2 style={styles.titleText}>{categoryTitle}</h2>
-                            {!isAllItems && entries.length > 0 && (
-                                <span style={styles.countBadge}>
-                                    {entries.length} items
-                                </span>
-                            )}
-                        </div>
+      <div style={styles.overlay} onClick={onClose}>
+        <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+          <div style={styles.header}>
+            <h2 style={styles.titleText}>Help & Support</h2>
+            <button onClick={onClose} style={styles.closeBtn}>✕</button>
+          </div>
+          <div style={styles.content}>
+            <p>Welcome to AuraSafe Help! Here are some resources:</p>
+            <ul>
+              <li><strong>Documentation:</strong> Getting Started Guide</li>
+              <li><strong>FAQs:</strong> Frequently Asked Questions</li>
+              <li><strong>Support:</strong> Contact Support</li>
+            </ul>
+            <p>For urgent issues, please email support@aurasafe.com.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-                        <div style={styles.headerActions}>
-                            <button onClick={handleAdd} style={styles.addBtn}>
-                                + Add Entry
-                            </button>
-                            <button onClick={onClose} style={styles.closeBtn}>
-                                ✕
-                            </button>
-                        </div>
-                    </div>
+  // Handle Passkey category - opens the PasskeyModal
+  if (category === 'passkeys') {
+    return (
+      <PasskeyModal
+        isOpen={isOpen}
+        onClose={onClose}
+        api={api}
+      />
+    );
+  }
 
-                    <div style={styles.content}>
-                        {!isAllItems && entries.length > 0 && (
-                            <div style={styles.topBar}>
-                                <label style={styles.selectAll}>
-                                    <input
-                                        type="checkbox"
-                                        checked={selectedIds.length === entries.length}
-                                        onChange={toggleSelectAll}
-                                    />
-                                    Select All
-                                </label>
+  // ===================== STATE FOR ALL ITEMS AND OTHER CATEGORIES =====================
+  const [entries, setEntries] = useState([]);
+  const [groupedEntries, setGroupedEntries] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [showEntryModal, setShowEntryModal] = useState(false);
+  const [editingEntry, setEditingEntry] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [copiedField, setCopiedField] = useState(null);
+  const [showPassword, setShowPassword] = useState({});
+  const [autoFillEnabled, setAutoFillEnabled] = useState({});
+  const [deletingEntryId, setDeletingEntryId] = useState(null);
+  const [fillStatus, setFillStatus] = useState({});
 
-                                {selectedIds.length > 0 && (
-                                    <button
-                                        onClick={handleBulkDelete}
-                                        style={styles.deleteBulk}
-                                    >
-                                        Delete ({selectedIds.length})
-                                    </button>
-                                )}
-                            </div>
-                        )}
+  const entryType = categoryToType[category];
 
-                        {loading ? (
-                            <p style={styles.loading}>Loading entries...</p>
-                        ) : isAllItems ? (
-                            Object.keys(groupedEntries).length === 0 ? (
-                                <p style={styles.empty}>No entries yet. Click "Add Entry" to create one.</p>
-                            ) : (
-                                renderGroupedEntries()
-                            )
-                        ) : entries.length === 0 ? (
-                            <p style={styles.empty}>No entries yet. Click "Add Entry" to create one.</p>
-                        ) : (
-                            <div>
-                                {entries.map((e) => renderEntryItem(e))}
-                            </div>
-                        )}
-                    </div>
-                </div>
+  // Helper function to get website name from URL
+  const getWebsiteName = (url) => {
+    if (!url) return 'Website';
+    try {
+      let domain = url.replace(/^https?:\/\//, '').replace(/^www\./, '');
+      domain = domain.split('/')[0];
+      const parts = domain.split('.');
+      if (parts.length >= 2) {
+        return parts[parts.length - 2].charAt(0).toUpperCase() + parts[parts.length - 2].slice(1);
+      }
+      return domain.charAt(0).toUpperCase() + domain.slice(1);
+    } catch {
+      return 'Website';
+    }
+  };
+
+  // ===================== REAL AUTOFILL IMPLEMENTATION =====================
+  const showNotification = (message, isError = false) => {
+    const notification = document.createElement('div');
+    notification.textContent = message;
+    notification.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: ${isError ? '#EF4444' : '#10B981'};
+            color: white;
+            padding: 10px 15px;
+            border-radius: 8px;
+            z-index: 100000;
+            font-size: 13px;
+            animation: slideIn 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        `;
+    document.body.appendChild(notification);
+    setTimeout(() => notification.remove(), 3000);
+  };
+
+  const fillCredentialsDirectly = async (entry, fillType = 'both') => {
+    if (!entry) {
+      showNotification('No entry selected', true);
+      return;
+    }
+
+    setFillStatus(prev => ({ ...prev, [entry.id]: 'filling' }));
+
+    try {
+      // Detect which browser API is available
+      let runtime = null;
+      let tab = null;
+
+      if (typeof chrome !== 'undefined' && chrome.tabs && chrome.runtime) {
+        runtime = chrome;
+      } else if (typeof browser !== 'undefined' && browser.tabs && browser.runtime) {
+        runtime = browser;
+      } else {
+        throw new Error('No browser extension API found');
+      }
+
+      // FIRST: Try active tab in current window
+      try {
+        const tabs = await runtime.tabs.query({ active: true, currentWindow: true });
+        tab = tabs?.[0];
+
+        // Check if it's a valid webpage tab
+        if (tab?.id && tab.url && (tab.url.startsWith('http://') || tab.url.startsWith('https://'))) {
+          console.log('[AuraSafe] Found active webpage tab:', tab.id, tab.url);
+        } else {
+          tab = null;
+        }
+      } catch (e) {
+        console.warn('[AuraSafe] Could not get active tab:', e);
+        tab = null;
+      }
+
+      // FALLBACK: If no valid tab found, scan all tabs for any http/https page
+      if (!tab?.id) {
+        console.log('[AuraSafe] No active webpage tab, scanning all tabs...');
+        const allTabs = await runtime.tabs.query({});
+        tab = allTabs.find(t =>
+          t.url &&
+          (t.url.startsWith('http://') || t.url.startsWith('https://'))
+        );
+
+        if (tab) {
+          console.log('[AuraSafe] Found webpage tab in fallback:', tab.id, tab.url);
+        }
+      }
+
+      // Validate tab
+      if (!tab?.id) {
+        throw new Error('INVALID_TAB');
+      }
+
+      // Ensure content script is available
+      try {
+        await runtime.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['content.js']
+        });
+      } catch (e) {
+        console.warn('Script already injected or failed:', e);
+      }
+
+      // Prepare the message
+      let messageType = 'FILL_BOTH';
+      let payload = {
+        username: entry.username || entry.email || '',
+        password: entry.password || ''
+      };
+
+      if (fillType === 'username') {
+        messageType = 'FILL_USERNAME';
+        payload = { username: entry.username || entry.email || '' };
+      } else if (fillType === 'password') {
+        messageType = 'FILL_PASSWORD';
+        payload = { password: entry.password || '' };
+      }
+
+      console.log('[AuraSafe] Sending fill message to tab:', tab.id, messageType, payload);
+
+      // Send message to content script
+      const response = await runtime.tabs.sendMessage(tab.id, { type: messageType, payload });
+
+      console.log('[AuraSafe] Fill response:', response);
+
+      if (response && response.success) {
+        setFillStatus(prev => ({ ...prev, [entry.id]: 'success' }));
+        showNotification('✓ Credentials filled successfully!');
+        setTimeout(() => setFillStatus(prev => ({ ...prev, [entry.id]: null })), 2000);
+      } else {
+        throw new Error(response?.error || 'Content script did not confirm fill');
+      }
+
+    } catch (err) {
+      console.error('[AuraSafe] Fill failed:', err);
+      setFillStatus(prev => ({ ...prev, [entry.id]: 'error' }));
+
+      let errorMessage;
+      if (err.message === 'INVALID_TAB') {
+        errorMessage = 'Open a webpage in your browser and try again.';
+      } else if (err.message?.includes('Receiving end does not exist') || err.message?.includes('Could not establish connection')) {
+        errorMessage = 'Reload the webpage and try again.';
+      } else {
+        errorMessage = 'Autofill failed. Make sure you have a webpage open.';
+      }
+
+      showNotification(errorMessage, true);
+      setTimeout(() => setFillStatus(prev => ({ ...prev, [entry.id]: null })), 3000);
+    }
+  };
+
+  const getFillButtonText = (entryId) => {
+    const status = fillStatus[entryId];
+    if (status === 'filling') return '⏳ Filling...';
+    if (status === 'success') return '✓ Filled!';
+    if (status === 'error') return '❌ Failed';
+    return '🔓 Fill';
+  };
+
+  const fetchEntries = async () => {
+    if (!api || category === 'help') return;
+
+    setLoading(true);
+    try {
+      const all = (await api.getVaultEntries()) || [];
+
+      // Load auto-fill preferences from localStorage
+      const savedAutoFill = localStorage.getItem('aurasafe_autofill_prefs');
+      const autoFillPrefs = savedAutoFill ? JSON.parse(savedAutoFill) : {};
+      setAutoFillEnabled(autoFillPrefs);
+
+      if (category === 'all') {
+        // Group entries by category for "All Items" view
+        const grouped = {};
+        all.forEach(entry => {
+          const cat = entry.category || 'credential';
+          if (!grouped[cat]) {
+            grouped[cat] = [];
+          }
+          grouped[cat].push(entry);
+        });
+        setGroupedEntries(grouped);
+        setEntries(all);
+      } else {
+        const filtered = all.filter((e) => e.category === entryType);
+        setEntries(filtered);
+        setGroupedEntries({});
+      }
+    } catch (err) {
+      console.error(err);
+      setEntries([]);
+      setGroupedEntries({});
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen && category !== 'passwords' && category !== 'paymentCards' && category !== 'addresses' && category !== 'passkeys' && category !== 'help') {
+      fetchEntries();
+    }
+  }, [isOpen, category]);
+
+  // Copy URL to clipboard function
+  const copyUrlToClipboard = async (url, entryId) => {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedField(`url_${entryId}`);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy URL:', err);
+    }
+  };
+
+  // IMPROVED setFieldValue - Fixes React/Vue/Angular forms
+  const setFieldValue = (field, value) => {
+    if (!field) return;
+
+    const prototype = Object.getPrototypeOf(field);
+    const valueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+
+    field.focus();
+
+    if (valueSetter) {
+      valueSetter.call(field, value);
+    } else {
+      field.value = value;
+    }
+
+    field.dispatchEvent(new InputEvent('input', {
+      bubbles: true,
+      composed: true,
+      inputType: 'insertText',
+      data: value
+    }));
+
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+
+    field.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Tab' }));
+    field.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Tab' }));
+
+    field.blur();
+  };
+
+  // Launch website function - Opens in system default browser
+  const launchWebsite = async (url, entryId) => {
+    if (!url) return;
+
+    let finalUrl = url;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      finalUrl = 'https://' + url;
+    }
+
+    // Use Electron's shell.openExternal to open in system default browser
+    try {
+      if (window.electronAPI && typeof window.electronAPI.openExternal === 'function') {
+        await window.electronAPI.openExternal(finalUrl);
+      } else if (window.api && typeof window.api.openExternal === 'function') {
+        await window.api.openExternal(finalUrl);
+      } else {
+        console.warn('electronAPI.openExternal not available, using window.open');
+        window.open(finalUrl, '_blank');
+      }
+    } catch (err) {
+      console.error('Failed to launch external browser:', err);
+      window.open(finalUrl, '_blank');
+    }
+
+    if (autoFillEnabled[entryId]) {
+      const entry = entries.find(e => e.id === entryId) ||
+        Object.values(groupedEntries).flat().find(e => e.id === entryId);
+
+      if (entry && (entry.username || entry.email)) {
+        try {
+          if (window.electronAPI && typeof window.electronAPI.setPendingAutofill === 'function') {
+            await window.electronAPI.setPendingAutofill({
+              entryId: entry.id,
+              username: entry.username || entry.email || '',
+              password: entry.password || '',
+              url: finalUrl,
+              timestamp: Date.now()
+            });
+            console.log('[AuraSafe] Pending autofill sent via electronAPI');
+          } else if (window.api && typeof window.api.setPendingAutofill === 'function') {
+            await window.api.setPendingAutofill({
+              entryId: entry.id,
+              username: entry.username || entry.email || '',
+              password: entry.password || '',
+              url: finalUrl,
+              timestamp: Date.now()
+            });
+            console.log('[AuraSafe] Pending autofill sent via api');
+          } else {
+            console.warn('setPendingAutofill not available');
+          }
+        } catch (err) {
+          console.error('[AuraSafe] Failed to set pending autofill:', err);
+        }
+      }
+    }
+  };
+
+  // Toggle auto-fill for an entry
+  const toggleAutoFill = (entryId, e) => {
+    e.stopPropagation();
+    const newValue = !autoFillEnabled[entryId];
+    const updatedPrefs = { ...autoFillEnabled, [entryId]: newValue };
+    setAutoFillEnabled(updatedPrefs);
+    localStorage.setItem('aurasafe_autofill_prefs', JSON.stringify(updatedPrefs));
+  };
+
+  const maskPassword = (password) => {
+    if (!password) return '';
+    if (password.length <= 4) return '•'.repeat(password.length);
+    return '•'.repeat(8);
+  };
+
+  const maskUsername = (username) => {
+    if (!username) return '';
+    if (username.length <= 4) return username;
+    return username.substring(0, 2) + '•'.repeat(Math.min(username.length - 4, 6)) + username.substring(username.length - 2);
+  };
+
+  const togglePasswordVisibility = (id, e) => {
+    e.stopPropagation();
+    setShowPassword(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const copyToClipboard = async (text, fieldName, entryId) => {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(`${fieldName}_${entryId}`);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  const handleIndividualDelete = async (entryId, entryTitle) => {
+    if (!api) return;
+
+    if (window.confirm(`Delete "${entryTitle || 'this entry'}"? This action cannot be undone.`)) {
+      setDeletingEntryId(entryId);
+      try {
+        await api.deleteVaultEntry(entryId);
+        setSelectedIds(prev => prev.filter(id => id !== entryId));
+        await fetchEntries();
+      } catch (err) {
+        console.error('Delete failed:', err);
+        alert('Failed to delete entry: ' + err.message);
+      } finally {
+        setDeletingEntryId(null);
+      }
+    }
+  };
+
+  const handleAdd = () => {
+    setEditingEntry(null);
+    setShowEntryModal(true);
+  };
+
+  const handleEditClick = (clickedEntry) => {
+    setEditingEntry(clickedEntry);
+    setShowEntryModal(true);
+  };
+
+  const handleSaveEntry = async (entryData) => {
+    if (isSaving || !api) return;
+
+    setIsSaving(true);
+
+    try {
+      await api.saveVaultEntry(entryData);
+      setShowEntryModal(false);
+      setEditingEntry(null);
+      await fetchEntries();
+    } catch (err) {
+      console.error('Save failed:', err);
+      alert('Failed to save entry: ' + err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCloseEntryModal = () => {
+    if (isSaving) return;
+    setShowEntryModal(false);
+    setEditingEntry(null);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === entries.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(entries.map((e) => e.id));
+    }
+  };
+
+  const toggleSelectOne = (id) => {
+    setSelectedIds((prev) =>
+      prev.includes(id)
+        ? prev.filter((x) => x !== id)
+        : [...prev, id]
+    );
+  };
+
+  const handleBulkDelete = async () => {
+    if (!api || selectedIds.length === 0) return;
+
+    if (window.confirm(`Delete ${selectedIds.length} selected item(s)? This action cannot be undone.`)) {
+      try {
+        await Promise.all(
+          selectedIds.map((id) => api.deleteVaultEntry(id))
+        );
+        setSelectedIds([]);
+        await fetchEntries();
+      } catch (err) {
+        console.error('Bulk delete failed:', err);
+        alert('Failed to delete entries: ' + err.message);
+      }
+    }
+  };
+
+  // Render a single entry item (truncated for brevity - same as before)
+  const renderEntryItem = (e) => (
+    <div key={e.id} style={styles.item}>
+      <input
+        type="checkbox"
+        checked={selectedIds.includes(e.id)}
+        onChange={() => toggleSelectOne(e.id)}
+        style={styles.checkbox}
+      />
+
+      <div style={{ flex: 1 }}>
+        <div style={styles.itemTitle}>
+          {e.title || 'Untitled Entry'}
+        </div>
+        <div style={styles.subText}>
+          {/* Credential fields */}
+          {e.username && (
+            <span
+              className="copyable-field"
+              style={styles.copyableField}
+              onClick={() => copyToClipboard(e.username, 'username', e.id)}
+              title="Click to copy username"
+            >
+              👤 {maskUsername(e.username)}
+              {copiedField === `username_${e.id}` && <span style={styles.copiedIndicator}> ✓ Copied!</span>}
+            </span>
+          )}
+          {e.password && (
+            <span style={styles.passwordWrapper}>
+              <span
+                className="copyable-field"
+                style={styles.copyableField}
+                onClick={() => copyToClipboard(e.password, 'password', e.id)}
+                title="Click to copy password"
+              >
+                🔒 {showPassword[e.id] ? e.password : maskPassword(e.password)}
+              </span>
+              <button
+                onClick={(event) => togglePasswordVisibility(e.id, event)}
+                style={styles.eyeButton}
+                className="eye-button"
+                title={showPassword[e.id] ? "Hide password" : "Show password"}
+              >
+                {showPassword[e.id] ? '🙈' : '👁️'}
+              </button>
+              {copiedField === `password_${e.id}` && <span style={styles.copiedIndicator}> ✓ Copied!</span>}
+            </span>
+          )}
+          {/* URL field - Now shows generic "URL" text instead of the actual URL */}
+          {e.url && (
+            <span style={styles.urlFieldWrapper}>
+              <span
+                className="url-link"
+                style={styles.urlLink}
+                onClick={() => copyUrlToClipboard(e.url, e.id)}
+                title={`Click to copy URL: ${e.url}`}
+              >
+                🔗 URL
+              </span>
+              {copiedField === `url_${e.id}` && <span style={styles.copiedIndicator}> ✓ Copied!</span>}
+              <button
+                onClick={() => launchWebsite(e.url, e.id)}
+                style={styles.inlineLaunchBtn}
+                title={`Launch ${getWebsiteName(e.url)}`}
+              >
+                Launch
+              </button>
+            </span>
+          )}
+          {/* Contact/Address fields */}
+          {e.addressLine && (
+            <span>📍 {e.addressLine}</span>
+          )}
+          {e.city && e.state && (
+            <span>🏙️ {e.city}, {e.state} {e.zip}</span>
+          )}
+          {e.country && (
+            <span>🌍 {e.country}</span>
+          )}
+          {/* Credit Card fields */}
+          {e.cardNumber && (
+            <span>💳 ••••{e.cardNumber.slice(-4)}</span>
+          )}
+          {e.expiry && (
+            <span>📅 {e.expiry}</span>
+          )}
+          {/* Bank Account fields */}
+          {e.bankName && (
+            <span>🏦 {e.bankName}</span>
+          )}
+          {e.accountNumber && (
+            <span>🔢 ••••{e.accountNumber.slice(-4)}</span>
+          )}
+          {/* Driver License fields */}
+          {e.licenseNumber && (
+            <span>📄 License: {e.licenseNumber}</span>
+          )}
+          {e.dob && (
+            <span>🎂 {e.dob}</span>
+          )}
+          {e.state && e.category === 'driverLicense' && (
+            <span>📍 {e.state}</span>
+          )}
+          {/* Passkey fields */}
+          {e.category === 'passkey' && e.passkeyId && (
+            <span
+              className="copyable-field"
+              style={styles.copyableField}
+              onClick={() => copyToClipboard(e.passkeyId, 'passkeyId', e.id)}
+              title="Click to copy passkey ID"
+            >
+              🔑 Passkey ID
+              {copiedField === `passkeyId_${e.id}` && <span style={styles.copiedIndicator}> ✓ Copied!</span>}
+            </span>
+          )}
+        </div>
+        {/* TOTP Display */}
+        {e.totpSecret && (
+          <div style={{ marginTop: '8px' }}>
+            <TOTPDisplay secret={e.totpSecret} label="2FA Code" />
+          </div>
+        )}
+        {/* Notes */}
+        {e.notes && (
+          <div style={styles.notesText}>📝 {e.notes}</div>
+        )}
+      </div>
+
+      <div style={styles.actionButtonsWrapper}>
+        {/* REAL AUTOFILL BUTTON */}
+        <button
+          onClick={() => fillCredentialsDirectly(e, 'both')}
+          style={styles.fillBtn}
+          disabled={fillStatus[e.id] === 'filling'}
+        >
+          {getFillButtonText(e.id)}
+        </button>
+
+        {/* Auto-fill Toggle Button - only for credentials (DESKTOP BRIDGE - LEGACY) */}
+        {(e.category === 'credential' || e.category === 'passkey') && e.url && (
+          <button
+            onClick={(event) => toggleAutoFill(e.id, event)}
+            style={{
+              ...styles.autoFillBtn,
+              background: autoFillEnabled[e.id] ? '#2e7d32' : '#4B5563',
+            }}
+            title={autoFillEnabled[e.id] ? "Auto-fill enabled - Click to disable" : "Auto-fill disabled - Click to enable"}
+          >
+            {autoFillEnabled[e.id] ? '🔓 Auto-fill ON' : '🔒 Auto-fill OFF'}
+          </button>
+        )}
+
+        <button
+          onClick={() => handleEditClick(e)}
+          style={styles.editBtn}
+        >
+          Edit
+        </button>
+
+        <button
+          onClick={() => handleIndividualDelete(e.id, e.title)}
+          style={styles.deleteBtn}
+          className="delete-icon"
+          title="Delete entry"
+          disabled={deletingEntryId === e.id}
+        >
+          {deletingEntryId === e.id ? '...' : '🗑️'}
+        </button>
+      </div>
+    </div>
+  );
+
+  // Render grouped entries for "All Items"
+  const renderGroupedEntries = () => {
+    const sortedGroups = Object.keys(groupedEntries).sort((a, b) => {
+      const orderA = groupConfig[a]?.order || 999;
+      const orderB = groupConfig[b]?.order || 999;
+      return orderA - orderB;
+    });
+
+    return sortedGroups.map(groupType => {
+      const group = groupedEntries[groupType];
+      const config = groupConfig[groupType] || { title: groupType, icon: '📄' };
+
+      return (
+        <div key={groupType} style={styles.groupSection}>
+          <div style={styles.groupHeader}>
+            <span style={styles.groupIcon}>{config.icon}</span>
+            <h3 style={styles.groupTitle}>{config.title}</h3>
+            <span style={styles.groupCount}>({group.length})</span>
+          </div>
+          <div style={styles.groupContent}>
+            {group.map(entry => renderEntryItem(entry))}
+          </div>
+        </div>
+      );
+    });
+  };
+
+  if (!isOpen) return null;
+
+  const categoryTitle = {
+    all: 'All Items',
+    passwords: 'Passwords',
+    passkeys: 'Passkeys',
+    addresses: 'Addresses',
+    paymentCards: 'Payment Cards',
+    bankAccounts: 'Bank Accounts',
+    driverLicenses: "Driver's Licenses",
+  }[category] || category;
+
+  const isAllItems = category === 'all';
+
+  return (
+    <>
+      <div style={styles.overlay} onClick={onClose}>
+        <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+          <div style={styles.header}>
+            <div style={styles.titleWrap}>
+              <h2 style={styles.titleText}>{categoryTitle}</h2>
+              {!isAllItems && entries.length > 0 && (
+                <span style={styles.countBadge}>
+                  {entries.length} items
+                </span>
+              )}
             </div>
 
-            <EntryModal
-                isOpen={showEntryModal}
-                entry={editingEntry}
-                category={category}
-                onClose={handleCloseEntryModal}
-                onSave={handleSaveEntry}
-            />
-        </>
-    );
+            <div style={styles.headerActions}>
+              <button onClick={handleAdd} style={styles.addBtn}>
+                + Add Entry
+              </button>
+              <button onClick={onClose} style={styles.closeBtn}>
+                ✕
+              </button>
+            </div>
+          </div>
+
+          <div style={styles.content}>
+            {entries.length > 0 && !isAllItems && (
+              <div style={styles.topBar}>
+                <label style={styles.selectAll}>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.length === entries.length}
+                    onChange={toggleSelectAll}
+                  />
+                  Select All
+                </label>
+
+                {selectedIds.length > 0 && (
+                  <button
+                    onClick={handleBulkDelete}
+                    style={styles.deleteBulk}
+                  >
+                    Delete ({selectedIds.length})
+                  </button>
+                )}
+              </div>
+            )}
+
+            {loading ? (
+              <p style={styles.loading}>Loading entries...</p>
+            ) : isAllItems ? (
+              Object.keys(groupedEntries).length === 0 ? (
+                <p style={styles.empty}>No entries yet. Click "Add Entry" to create one.</p>
+              ) : (
+                renderGroupedEntries()
+              )
+            ) : entries.length === 0 ? (
+              <p style={styles.empty}>No entries yet. Click "Add Entry" to create one.</p>
+            ) : (
+              <div>
+                {entries.map((e) => renderEntryItem(e))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <EntryModal
+        isOpen={showEntryModal}
+        entry={editingEntry}
+        category={category}
+        onClose={handleCloseEntryModal}
+        onSave={handleSaveEntry}
+      />
+    </>
+  );
 }
 
 const styles = {
-    overlay: {
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.75)',
-        backdropFilter: 'blur(8px)',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 99999,
-    },
-    modal: {
-        background: '#0f3d24',
-        padding: '1.5rem',
-        borderRadius: '1rem',
-        width: '90%',
-        maxWidth: '750px',
-        color: '#fff',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-        border: '1px solid rgba(76,175,80,0.3)',
-    },
-    header: {
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '1rem',
-        paddingBottom: '0.5rem',
-        borderBottom: '1px solid rgba(76,175,80,0.3)',
-    },
-    titleWrap: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px',
-    },
-    titleText: {
-        margin: 0,
-        fontSize: '1.5rem',
-        fontWeight: 600,
-        background: 'linear-gradient(120deg, #fff, #a5d6a5)',
-        WebkitBackgroundClip: 'text',
-        backgroundClip: 'text',
-        color: 'transparent',
-    },
-    countBadge: {
-        background: '#1b5e20',
-        padding: '4px 10px',
-        borderRadius: '20px',
-        fontSize: '12px',
-    },
-    headerActions: {
-        display: 'flex',
-        gap: '10px',
-    },
-    addBtn: {
-        background: 'linear-gradient(135deg, #2e7d32, #1b5e20)',
-        color: '#fff',
-        border: '1px solid rgba(255,255,255,0.15)',
-        padding: '8px 16px',
-        borderRadius: '10px',
-        cursor: 'pointer',
-        fontWeight: '600',
-    },
-    closeBtn: {
-        background: 'rgba(255,255,255,0.08)',
-        color: '#fff',
-        width: '38px',
-        height: '38px',
-        borderRadius: '10px',
-        border: '1px solid rgba(255,255,255,0.15)',
-        cursor: 'pointer',
-        fontSize: '18px',
-    },
-    content: {
-        marginTop: '1rem',
-        maxHeight: '60vh',
-        overflowY: 'auto',
-        paddingRight: '0.5rem',
-    },
-    topBar: {
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '12px',
-        paddingBottom: '8px',
-        borderBottom: '1px solid rgba(255,255,255,0.1)',
-    },
-    selectAll: {
-        fontSize: '12px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px',
-        cursor: 'pointer',
-    },
-    deleteBulk: {
-        background: '#b91c1c',
-        color: '#fff',
-        border: 'none',
-        padding: '6px 12px',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        fontSize: '12px',
-    },
-    item: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px',
-        padding: '0.75rem',
-        marginBottom: '0.5rem',
-        background: '#1a4a1f',
-        borderRadius: '0.5rem',
-        transition: 'all 0.2s ease',
-    },
-    checkbox: {
-        width: '18px',
-        height: '18px',
-        accentColor: '#2e7d32',
-        cursor: 'pointer',
-    },
-    itemTitle: {
-        fontWeight: 600,
-        marginBottom: '4px',
-    },
-    subText: {
-        fontSize: '12px',
-        opacity: 0.75,
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: '12px',
-        alignItems: 'center',
-    },
-    copyableField: {
-        cursor: 'pointer',
-        padding: '2px 6px',
-        borderRadius: '4px',
-        transition: 'all 0.2s ease',
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '4px',
-    },
-    passwordWrapper: {
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '4px',
-    },
-    eyeButton: {
-        background: 'none',
-        border: 'none',
-        cursor: 'pointer',
-        fontSize: '12px',
-        padding: '2px 4px',
-        borderRadius: '4px',
-        transition: 'all 0.2s ease',
-    },
-    urlFieldWrapper: {
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '6px',
-    },
-    urlLink: {
-        color: '#60A5FA',
-        cursor: 'pointer',
-        fontSize: '12px',
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '4px',
-        transition: 'all 0.2s ease',
-    },
-    inlineLaunchBtn: {
-        background: '#3B82F6',
-        color: '#fff',
-        border: 'none',
-        padding: '2px 8px',
-        borderRadius: '4px',
-        cursor: 'pointer',
-        fontSize: '10px',
-        transition: 'all 0.2s ease',
-    },
-    copiedIndicator: {
-        color: '#10B981',
-        fontSize: '11px',
-        fontWeight: 'bold',
-        marginLeft: '4px',
-    },
-    actionButtons: {
-        display: 'flex',
-        gap: '6px',
-        alignItems: 'center',
-    },
-    autoFillBtn: {
-        color: '#fff',
-        border: 'none',
-        padding: '6px 10px',
-        borderRadius: '6px',
-        cursor: 'pointer',
-        fontSize: '10px',
-        fontWeight: '500',
-        transition: 'all 0.2s ease',
-    },
-    editBtn: {
-        background: '#8B5CF6',
-        color: '#fff',
-        border: 'none',
-        padding: '6px 12px',
-        borderRadius: '6px',
-        cursor: 'pointer',
-        fontSize: '11px',
-        fontWeight: '500',
-    },
-    loading: {
-        textAlign: 'center',
-        padding: '2rem',
-        color: '#c8e6c9',
-    },
-    empty: {
-        textAlign: 'center',
-        padding: '2rem',
-        color: '#c8e6c9',
-        fontStyle: 'italic',
-    },
-    // Group styles
-    groupSection: {
-        marginBottom: '1.5rem',
-    },
-    groupHeader: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        marginBottom: '12px',
-        paddingBottom: '8px',
-        borderBottom: '1px solid rgba(76, 175, 80, 0.3)',
-    },
-    groupIcon: {
-        fontSize: '1.2rem',
-    },
-    groupTitle: {
-        fontSize: '1rem',
-        fontWeight: 600,
-        color: '#C8E6C9',
-        margin: 0,
-    },
-    groupCount: {
-        fontSize: '0.75rem',
-        color: '#9CA3AF',
-    },
-    groupContent: {
-        paddingLeft: '0.5rem',
-    },
+  overlay: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(0,0,0,0.75)',
+    backdropFilter: 'blur(8px)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 99999,
+  },
+  modal: {
+    background: '#0f3d24',
+    padding: '1.5rem',
+    borderRadius: '1rem',
+    width: '90%',
+    maxWidth: '750px',
+    color: '#fff',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+    border: '1px solid rgba(76,175,80,0.3)',
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '1rem',
+    paddingBottom: '0.5rem',
+    borderBottom: '1px solid rgba(76,175,80,0.3)',
+  },
+  titleWrap: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+  },
+  titleText: {
+    margin: 0,
+    fontSize: '1.5rem',
+    fontWeight: 600,
+    background: 'linear-gradient(120deg, #fff, #a5d6a5)',
+    WebkitBackgroundClip: 'text',
+    backgroundClip: 'text',
+    color: 'transparent',
+  },
+  countBadge: {
+    background: '#1b5e20',
+    padding: '4px 10px',
+    borderRadius: '20px',
+    fontSize: '12px',
+  },
+  headerActions: {
+    display: 'flex',
+    gap: '10px',
+  },
+  addBtn: {
+    background: 'linear-gradient(135deg, #2e7d32, #1b5e20)',
+    color: '#fff',
+    border: '1px solid rgba(255,255,255,0.15)',
+    padding: '8px 16px',
+    borderRadius: '10px',
+    cursor: 'pointer',
+    fontWeight: '600',
+  },
+  closeBtn: {
+    background: 'rgba(255,255,255,0.08)',
+    color: '#fff',
+    width: '38px',
+    height: '38px',
+    borderRadius: '10px',
+    border: '1px solid rgba(255,255,255,0.15)',
+    cursor: 'pointer',
+    fontSize: '18px',
+  },
+  content: {
+    marginTop: '1rem',
+    maxHeight: '60vh',
+    overflowY: 'auto',
+    paddingRight: '0.5rem',
+  },
+  topBar: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '12px',
+    paddingBottom: '8px',
+    borderBottom: '1px solid rgba(255,255,255,0.1)',
+  },
+  selectAll: {
+    fontSize: '12px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    cursor: 'pointer',
+  },
+  deleteBulk: {
+    background: '#b91c1c',
+    color: '#fff',
+    border: 'none',
+    padding: '6px 12px',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '12px',
+  },
+  item: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '0.75rem',
+    marginBottom: '0.5rem',
+    background: '#1a4a1f',
+    borderRadius: '0.5rem',
+    transition: 'all 0.2s ease',
+  },
+  checkbox: {
+    width: '18px',
+    height: '18px',
+    accentColor: '#2e7d32',
+    cursor: 'pointer',
+  },
+  itemTitle: {
+    fontWeight: 600,
+    marginBottom: '4px',
+  },
+  subText: {
+    fontSize: '12px',
+    opacity: 0.75,
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    alignItems: 'center',
+  },
+  copyableField: {
+    cursor: 'pointer',
+    padding: '2px 6px',
+    borderRadius: '4px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+  },
+  passwordWrapper: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+  },
+  eyeButton: {
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: '12px',
+    padding: '2px 4px',
+    borderRadius: '4px',
+  },
+  urlFieldWrapper: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+  urlLink: {
+    color: '#60A5FA',
+    cursor: 'pointer',
+    fontSize: '12px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+  },
+  inlineLaunchBtn: {
+    background: '#3B82F6',
+    color: '#fff',
+    border: 'none',
+    padding: '2px 8px',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '10px',
+  },
+  copiedIndicator: {
+    color: '#10B981',
+    fontSize: '11px',
+    fontWeight: 'bold',
+    marginLeft: '4px',
+  },
+  notesText: {
+    fontSize: '11px',
+    color: '#9CA3AF',
+    marginTop: '4px',
+    fontStyle: 'italic',
+  },
+  actionButtonsWrapper: {
+    display: 'flex',
+    gap: '6px',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  autoFillBtn: {
+    color: '#fff',
+    border: 'none',
+    padding: '6px 10px',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '10px',
+    fontWeight: '500',
+  },
+  fillBtn: {
+    background: '#10B981',
+    color: '#fff',
+    border: 'none',
+    padding: '6px 12px',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '11px',
+    fontWeight: '500',
+    minWidth: '75px',
+    transition: 'all 0.2s ease',
+  },
+  editBtn: {
+    background: '#8B5CF6',
+    color: '#fff',
+    border: 'none',
+    padding: '6px 12px',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '11px',
+    fontWeight: '500',
+  },
+  deleteBtn: {
+    background: '#6B7280',
+    color: '#fff',
+    border: 'none',
+    padding: '6px 12px',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '11px',
+    fontWeight: '500',
+  },
+  loading: {
+    textAlign: 'center',
+    padding: '2rem',
+    color: '#c8e6c9',
+  },
+  empty: {
+    textAlign: 'center',
+    padding: '2rem',
+    color: '#c8e6c9',
+    fontStyle: 'italic',
+  },
+  groupSection: {
+    marginBottom: '1.5rem',
+  },
+  groupHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '12px',
+    paddingBottom: '8px',
+    borderBottom: '1px solid rgba(76, 175, 80, 0.3)',
+  },
+  groupIcon: {
+    fontSize: '1.2rem',
+  },
+  groupTitle: {
+    fontSize: '1rem',
+    fontWeight: 600,
+    color: '#C8E6C9',
+    margin: 0,
+  },
+  groupCount: {
+    fontSize: '0.75rem',
+    color: '#9CA3AF',
+  },
+  groupContent: {
+    paddingLeft: '0.5rem',
+  },
 };

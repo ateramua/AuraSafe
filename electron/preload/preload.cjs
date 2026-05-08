@@ -1,5 +1,5 @@
 // ===================== PRELOAD SCRIPT =====================
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, shell } = require('electron');
 
 // ===================== VAULT STATUS LISTENER (SINGLETON FOR APP LIFETIME) =====================
 // IMPORTANT: This listener is registered ONCE and lives for the entire app lifetime
@@ -49,6 +49,23 @@ onVaultStatusChange();
 // the React component lifecycle from breaking the singleton pattern.
 // DO NOT add a remove method here.
 
+// Helper function to set pending autofill via HTTP
+const setPendingAutofill = async (payload) => {
+  try {
+    const response = await fetch('http://localhost:47392/set-autofill', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+    return await response.json();
+  } catch (error) {
+    console.error('[Preload] setPendingAutofill error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
 // Create the API object that matches what api-client.js expects
 const api = {
   // ===================== VAULT CRUD =====================
@@ -77,6 +94,23 @@ const api = {
       console.error('[API] getVaultEntries error:', error);
       throw error;
     }
+  },
+
+  // ===================== EXTERNAL BROWSER =====================
+  openExternal: async (url) => {
+    try {
+      console.log('[API] openExternal called with URL:', url);
+      const result = await ipcRenderer.invoke('open-external', url);
+      return result;
+    } catch (error) {
+      console.error('[API] openExternal error:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // ===================== AUTOFILL =====================
+  setPendingAutofill: async (payload) => {
+    return await setPendingAutofill(payload);
   },
 
   // ===================== VAULT STATE =====================
@@ -186,6 +220,7 @@ const api = {
       return { secret: null };
     }
   },
+  
 
   verifyPairingCode: async (secret) => {
     try {
@@ -354,6 +389,17 @@ const api = {
 // Expose the API to the renderer process
 contextBridge.exposeInMainWorld('api', api);
 
+// Also expose electronAPI for compatibility with the launchWebsite function
+contextBridge.exposeInMainWorld('electronAPI', {
+  openExternal: async (url) => {
+    console.log('[electronAPI] openExternal called with URL:', url);
+    return await ipcRenderer.invoke('open-external', url);
+  },
+  setPendingAutofill: async (payload) => {
+    return await setPendingAutofill(payload);
+  }
+});
+
 // Also expose electron for any direct calls (backward compatibility)
 contextBridge.exposeInMainWorld('electron', {
   invoke: async (channel, ...args) => {
@@ -362,4 +408,6 @@ contextBridge.exposeInMainWorld('electron', {
 });
 
 console.log('[Preload] API exposed. Available methods:', Object.keys(api));
+console.log('[Preload] electronAPI.openExternal exposed:', typeof contextBridge.exposeInMainWorld);
+console.log('[Preload] electronAPI.setPendingAutofill exposed');
 console.log('[Preload] Vault status listener is SINGLETON - will persist for app lifetime');

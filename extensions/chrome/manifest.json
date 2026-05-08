@@ -3,9 +3,16 @@
   "name": "AuraSafe Password Manager",
   "short_name": "AuraSafe",
   "version": "1.0.0",
-  "description": "Secure password manager",
-  "permissions": ["activeTab", "storage", "clipboardWrite", "clipboardRead", "tabs"],
-  "host_permissions": ["http://localhost:8765/*", "ws://localhost:8765/*", "http://*/*", "https://*/*"],
+  "description": "Secure password manager with autofill",
+  "permissions": ["activeTab", "storage", "clipboardWrite", "clipboardRead", "tabs", "scripting"],
+  "host_permissions": [
+    "http://localhost:3456/*",
+    "http://localhost:47392/*",
+    "http://localhost:8765/*",
+    "ws://localhost:8765/*",
+    "http://*/*",
+    "https://*/*"
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"

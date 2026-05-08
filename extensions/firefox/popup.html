@@ -165,9 +165,75 @@
       color: rgba(255, 255, 255, 0.5);
     }
 
+    /* ===================== MANUAL FILL BUTTONS ===================== */
+    .manual-fill-section {
+      padding: 12px 20px;
+      border-bottom: 1px solid rgba(76, 175, 80, 0.2);
+      background: rgba(0, 0, 0, 0.1);
+    }
+
+    .manual-fill-title {
+      font-size: 11px;
+      color: #c8e6c9;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .manual-fill-buttons {
+      display: flex;
+      gap: 8px;
+    }
+
+    .manual-fill-btn {
+      flex: 1;
+      background: rgba(59, 130, 246, 0.8);
+      border: none;
+      padding: 8px 12px;
+      border-radius: 8px;
+      color: white;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .manual-fill-btn:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.1);
+    }
+
+    .manual-fill-btn.username-btn {
+      background: rgba(59, 130, 246, 0.8);
+    }
+
+    .manual-fill-btn.username-btn:hover {
+      background: #3b82f6;
+    }
+
+    .manual-fill-btn.password-btn {
+      background: rgba(139, 92, 246, 0.8);
+    }
+
+    .manual-fill-btn.password-btn:hover {
+      background: #8b5cf6;
+    }
+
+    .manual-fill-btn.both-btn {
+      background: rgba(16, 185, 129, 0.8);
+    }
+
+    .manual-fill-btn.both-btn:hover {
+      background: #10b981;
+    }
+
+    .manual-fill-btn:active {
+      transform: translateY(0);
+    }
+
     /* ===================== ENTRIES LIST ===================== */
     .entries-container {
-      max-height: 320px;
+      max-height: 280px;
       overflow-y: auto;
       padding: 8px 12px;
     }
@@ -416,6 +482,16 @@
   <!-- SEARCH -->
   <div class="search-container">
     <input type="text" class="search-input" id="searchInput" placeholder="Search credentials... (Ctrl+F)">
+  </div>
+
+  <!-- MANUAL FILL SECTION -->
+  <div class="manual-fill-section">
+    <div class="manual-fill-title">⚡ Manual Fill for Current Page</div>
+    <div class="manual-fill-buttons">
+      <button id="fillUsername" class="manual-fill-btn username-btn">👤 Fill Username</button>
+      <button id="fillPassword" class="manual-fill-btn password-btn">🔒 Fill Password</button>
+      <button id="fillBoth" class="manual-fill-btn both-btn">🔐 Fill Both</button>
+    </div>
   </div>
 
   <!-- ENTRIES LIST -->

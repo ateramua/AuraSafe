@@ -75,6 +75,16 @@ async function discoverDesktopPort() {
   return false;
 }
 
+// ✅ NEW: Clean up stored tab data when tab is closed (Firefox)
+browser.tabs.onRemoved.addListener((tabId) => {
+  browser.storage.local.get(['lastOpenedTabId']).then((data) => {
+    if (data.lastOpenedTabId === tabId) {
+      browser.storage.local.remove(['lastOpenedTabId', 'lastEntry', 'lastOpenedUrl']);
+      log('info', `Cleaned up stored data for closed tab: ${tabId}`);
+    }
+  }).catch(() => {});
+});
+
 // ===================== START POLLING =====================
 async function startPolling() {
   if (pollingInterval) clearInterval(pollingInterval);
