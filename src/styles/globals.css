@@ -35,6 +35,55 @@ body {
   transition: transform 0.2s;
 }
 
+.auth-card:hover {
+  transform: translateY(-5px);
+}
+
+.auth-card h2 {
+  font-size: 1.8rem;
+  margin-bottom: 0.5rem;
+  color: #a7f3d0;
+  text-align: center;
+}
+
+.auth-card p {
+  text-align: center;
+  color: #c7f9e0;
+  margin-bottom: 1.5rem;
+}
+
+.auth-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.auth-card label {
+  color: #c7f9e0;
+}
+
+.auth-card input {
+  padding: 0.75rem 1rem;
+  border: 1px solid #2d6a4f;
+  border-radius: 1rem;
+  background: #f1faf5;
+  color: #1e3a2f;
+}
+
+.auth-card button {
+  background: #2f855a;
+  color: white;
+  border: none;
+  padding: 0.75rem;
+  border-radius: 2rem;
+  cursor: pointer;
+}
+
+.error {
+  color: #f8b4b4;
+  font-size: 0.875rem;
+  text-align: center;
+}
 
 /* Modern Entry Card Styles */
 .entry-card {
@@ -123,78 +172,6 @@ body {
   transform: scale(1.05);
 }
 
-/* Responsive design */
-@media (max-width: 768px) {
-  .entry-card-content {
-    padding: 12px 16px;
-  }
-
-  .entry-icon {
-    font-size: 1.5rem;
-    min-width: 36px;
-  }
-
-  .entry-name {
-    font-size: 0.9rem;
-  }
-
-  .entry-username,
-  .entry-url,
-  .entry-detail {
-    font-size: 0.7rem;
-  }
-}
-
-.auth-card:hover {
-  transform: translateY(-5px);
-}
-
-.auth-card h2 {
-  font-size: 1.8rem;
-  margin-bottom: 0.5rem;
-  color: #a7f3d0;
-  text-align: center;
-}
-
-.auth-card p {
-  text-align: center;
-  color: #c7f9e0;
-  margin-bottom: 1.5rem;
-}
-
-.auth-card form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.auth-card label {
-  color: #c7f9e0;
-}
-
-.auth-card input {
-  padding: 0.75rem 1rem;
-  border: 1px solid #2d6a4f;
-  border-radius: 1rem;
-  background: #f1faf5;
-  color: #1e3a2f;
-}
-
-.auth-card button {
-  background: #2f855a;
-  color: white;
-  border: none;
-  padding: 0.75rem;
-  border-radius: 2rem;
-  cursor: pointer;
-}
-
-.error {
-  color: #f8b4b4;
-  font-size: 0.875rem;
-  text-align: center;
-}
-
 /* Vault */
 .vault-container {
   max-width: 1200px;
@@ -234,26 +211,6 @@ body {
 .entries-grid {
   display: grid;
   gap: 1.5rem;
-}
-
-.entry-card {
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 1.5rem;
-  display: flex;
-  justify-content: space-between;
-  padding: 1rem;
-}
-
-.entry-name {
-  color: #1e3a2f;
-}
-
-.entry-username {
-  color: #2d6a4f;
-}
-
-.delete-button:hover {
-  background: #fee2e2;
 }
 
 /* Modal */
@@ -355,10 +312,25 @@ input:checked+.toggle-slider {
   background: rgba(255, 255, 255, 0.95);
   border-radius: 1.5rem;
   padding: 2rem;
+  color: #1a202c;
+}
+
+.dashboard-card h2,
+.dashboard-card h3 {
+  color: #1e3a2f;
+}
+
+.dashboard-card p,
+.dashboard-card li {
+  color: #2d3748;
 }
 
 .stat-value {
   color: #2d6a4f;
+}
+
+.stat-label {
+  color: #4a5568;
 }
 
 /* Loading */
@@ -367,9 +339,7 @@ input:checked+.toggle-slider {
   padding: 3rem;
 }
 
-/* ===========================
-   Security page styles
-=========================== */
+/* Security page styles */
 .security-page {
   max-width: 1200px;
   margin: 2rem auto;
@@ -408,30 +378,6 @@ input:checked+.toggle-slider {
   background: #cbd5e0;
 }
 
-/* Ensure dashboard text contrast */
-.dashboard-card {
-  background: rgba(255, 255, 255, 0.95);
-  color: #1a202c;
-}
-
-.dashboard-card h2,
-.dashboard-card h3 {
-  color: #1e3a2f;
-}
-
-.dashboard-card p,
-.dashboard-card li {
-  color: #2d3748;
-}
-
-.stat-value {
-  color: #2d6a4f;
-}
-
-.stat-label {
-  color: #4a5568;
-}
-
 .issue-section {
   background: #fff5f0;
   border-left-color: #ed8936;
@@ -444,4 +390,74 @@ input:checked+.toggle-slider {
 .success-message {
   background: #e6fffa;
   color: #2c7a4d;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .entry-card-content {
+    padding: 12px 16px;
+  }
+
+  .entry-icon {
+    font-size: 1.5rem;
+    min-width: 36px;
+  }
+
+  .entry-name {
+    font-size: 0.9rem;
+  }
+
+  .entry-username,
+  .entry-url,
+  .entry-detail {
+    font-size: 0.7rem;
+  }
+}
+
+/* ========================
+   AuraSafe Content Script Styles 
+   (Auto-injected on pages)
+   ======================== */
+
+@keyframes aurasafe-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes aurasafe-field-highlight {
+  0% {
+    box-shadow: 0 0 0 0 rgba(30, 75, 110, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 4px rgba(30, 75, 110, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(30, 75, 110, 0);
+  }
+}
+
+.aurasafe-field-highlight {
+  animation: aurasafe-field-highlight 0.8s ease-out;
+  transition: box-shadow 0.2s ease;
+}
+
+.aurasafe-filled-indicator {
+  position: relative;
+}
+
+.aurasafe-filled-indicator::after {
+  content: "🔐";
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  opacity: 0.6;
+  pointer-events: none;
 }
