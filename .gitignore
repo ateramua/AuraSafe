@@ -154,3 +154,20 @@ debug.log
 
 # Electron builder cache
 electron-builder-cache/
+
+# Electron builds
+release/
+dist/
+
+# Next.js
+.next/
+out/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Node
+node_modules/
