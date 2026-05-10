@@ -1,3 +1,4 @@
+// src/pages/settings.jsx (UPDATED with Backup and Locked State)
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
@@ -14,6 +15,7 @@ import {
   setAutoSync,
 } from '../lib/api-client';
 import { loadVault } from '../lib/store';
+import BackupSettings from '../components/BackupSettings';
 
 // Safe link that uses Next.js router if available, otherwise falls back to full page load
 function SafeLink({ href, children, className }) {
@@ -39,6 +41,8 @@ export default function SettingsPage() {
   const [entries, setEntries] = useState([]);
   const [unlocked, setUnlocked] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [vaultDataForBackup, setVaultDataForBackup] = useState(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
@@ -51,10 +55,51 @@ export default function SettingsPage() {
   const [securityScore, setSecurityScore] = useState(0);
   const [strongPasswords, setStrongPasswords] = useState(0);
 
+  // 🛠️ FIX: Move testBackup INSIDE the component
+  const testBackup = async () => {
+    console.log('[DEBUG] Testing backup function');
+    
+    if (window.api && window.api.backupPreVault) {
+      try {
+        const initResult = await window.api.backupPreVault.initTemp();
+        console.log('[DEBUG] initTemp:', initResult);
+        
+        const result = await window.api.backupPreVault.importFile();
+        console.log('[DEBUG] importFile:', result);
+        
+        if (result.success && result.backupData) {
+          alert('Backup loaded!');
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    } else {
+      console.error('backupPreVault not available');
+    }
+  };
+
+  // Helper to load vault data for backup
+  const loadVaultForBackup = async () => {
+    const vaultData = await loadVault();
+    let entriesArray = [];
+    if (Array.isArray(vaultData)) {
+      entriesArray = vaultData;
+    } else if (vaultData && typeof vaultData === 'object' && Array.isArray(vaultData.entries)) {
+      entriesArray = vaultData.entries;
+    }
+    return { entries: entriesArray, lastModified: Date.now() };
+  };
+
   useEffect(() => {
     const init = async () => {
       const unlockedStatus = await isUnlocked();
       setUnlocked(unlockedStatus);
+
+      // Check if vault is initialized
+      if (window.api && typeof window.api.isInitialized === 'function') {
+        const initialized = await window.api.isInitialized();
+        setIsInitialized(initialized);
+      }
 
       if (unlockedStatus) {
         const vaultData = await loadVault();
@@ -65,6 +110,7 @@ export default function SettingsPage() {
           entriesArray = vaultData.entries;
         }
         setEntries(entriesArray);
+        setVaultDataForBackup({ entries: entriesArray, lastModified: Date.now() });
       }
 
       try {
@@ -102,17 +148,121 @@ export default function SettingsPage() {
     setSecurityScore(score);
   }, [entries]);
 
+  // Handle restore completion
+  const handleRestoreComplete = async (restoredData) => {
+    if (restoredData && restoredData.entries) {
+      setEntries(restoredData.entries);
+      setVaultDataForBackup({ entries: restoredData.entries, lastModified: Date.now() });
+      setSyncMessage('✅ Vault restored successfully! Refreshing...');
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    }
+  };
+
+  // Handle file restore from locked state
+  const handleFileRestore = async () => {
+    if (window.api && window.api.backupPreVault) {
+      await window.api.backupPreVault.initTemp();
+      const result = await window.api.backupPreVault.importFile();
+      if (result.success && result.backupData) {
+        sessionStorage.setItem('pendingRestore', JSON.stringify(result.backupData));
+        window.location.href = '/vault';
+      } else if (!result.cancelled) {
+        alert(result.error || 'Failed to restore backup');
+      }
+    }
+  };
+
+  // Handle iCloud restore from locked state
+  const handleICloudRestore = async () => {
+    if (window.api && window.api.backupPreVault) {
+      await window.api.backupPreVault.initTemp();
+      const result = await window.api.backupPreVault.iCloudRestore();
+      if (result.success && result.backupData) {
+        sessionStorage.setItem('pendingRestore', JSON.stringify(result.backupData));
+        window.location.href = '/vault';
+      } else {
+        alert(result.error || 'No iCloud backup found');
+      }
+    }
+  };
+
   if (loading) return <div className="loading-spinner">Loading settings...</div>;
 
-  if (!unlocked) {
+  // 🔥 NEW: Show backup options even when vault is locked or not initialized
+  if (!unlocked || !isInitialized) {
     return (
-      <div className="auth-container">
-        <div className="auth-card">
-          <h2>Vault Locked</h2>
-          <p>Please unlock your vault to view security settings and insights.</p>
-          <SafeLink href="/vault" className="back-button">
-            ← Go to Vault
-          </SafeLink>
+      <div className="settings-container">
+        <div className="settings-card">
+          <div className="security-header">
+            <SafeLink href="/vault" className="back-button">
+              ← Back to Vault
+            </SafeLink>
+            <h1>Settings</h1>
+          </div>
+
+          <hr className="settings-divider" />
+
+          {/* Backup section - ALWAYS available, even when locked */}
+          <div className="setting-section">
+            <div className="setting-header">
+              <span className="setting-icon">💾</span>
+              <h3>Vault Backup & Restore</h3>
+            </div>
+            <p className="setting-description">
+              Restore your vault from a backup file or iCloud.
+              This is useful if you're setting up a new device or recovering from data loss.
+            </p>
+
+            {/* Backup buttons using backupPreVault API */}
+            <div className="button-group" style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+              <button onClick={handleFileRestore} className="backup-button" style={{
+                padding: '0.7rem 1.5rem',
+                background: 'linear-gradient(135deg, #2e7d32, #1b5e20)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '2rem',
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+                fontWeight: '600',
+              }}>
+                📂 Restore from File
+              </button>
+              <button onClick={handleICloudRestore} className="backup-button" style={{
+                padding: '0.7rem 1.5rem',
+                background: 'rgba(59, 130, 246, 0.8)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '2rem',
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+                fontWeight: '600',
+              }}>
+                ☁️ Restore from iCloud
+              </button>
+            </div>
+          </div>
+
+          <hr className="settings-divider" />
+
+          <div className="locked-message" style={{ textAlign: 'center', padding: '1rem' }}>
+            <p style={{ color: '#c8e6c9', marginBottom: '1rem' }}>
+              🔒 Vault is {!isInitialized ? 'not initialized' : 'locked'}.
+              Unlock to access security settings, biometrics, and IPFS sync.
+            </p>
+            <SafeLink href="/vault" className="unlock-button" style={{
+              background: 'rgba(76, 175, 80, 0.2)',
+              border: '1px solid #4caf50',
+              color: '#4caf50',
+              padding: '0.5rem 1rem',
+              borderRadius: '2rem',
+              textDecoration: 'none',
+              display: 'inline-block',
+            }}>
+              Go to Vault to Unlock →
+            </SafeLink>
+          </div>
         </div>
       </div>
     );
@@ -170,6 +320,10 @@ export default function SettingsPage() {
       const result = await syncPull();
       if (result.success) {
         setSyncMessage('✅ Pull successful. Vault updated.');
+        // Refresh entries after pull
+        const freshData = await loadVaultForBackup();
+        setEntries(freshData.entries);
+        setVaultDataForBackup(freshData);
       } else {
         setSyncMessage(`❌ Pull failed: ${result.error}`);
       }
@@ -183,7 +337,6 @@ export default function SettingsPage() {
   return (
     <>
       <style jsx>{`
-        /* Global reset / base */
         * {
           box-sizing: border-box;
         }
@@ -199,7 +352,7 @@ export default function SettingsPage() {
         }
 
         .settings-card {
-          max-width: 1000px;
+          max-width: 1100px;
           width: 100%;
           background: rgba(20, 40, 20, 0.7);
           backdrop-filter: blur(12px);
@@ -257,10 +410,9 @@ export default function SettingsPage() {
           color: #eef5ff;
         }
 
-        /* Dashboard Grid */
         .dashboard-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
           gap: 1.5rem;
           margin-bottom: 2rem;
         }
@@ -359,7 +511,6 @@ export default function SettingsPage() {
           border-radius: 1rem;
         }
 
-        /* Toggle switch (green) */
         .toggle-switch {
           position: relative;
           display: inline-block;
@@ -406,7 +557,6 @@ export default function SettingsPage() {
           transform: translateX(24px);
         }
 
-        /* Sync buttons */
         .sync-buttons {
           display: flex;
           flex-wrap: wrap;
@@ -485,36 +635,6 @@ export default function SettingsPage() {
           color: #c7e2ff;
         }
 
-        /* Auth container (unlocked) */
-        .auth-container {
-          min-height: 100vh;
-          background: linear-gradient(135deg, #0a2a0a 0%, #0f3a0f 100%);
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          padding: 2rem;
-        }
-
-        .auth-card {
-          background: rgba(20, 40, 20, 0.8);
-          backdrop-filter: blur(12px);
-          border-radius: 2rem;
-          padding: 2.5rem;
-          text-align: center;
-          max-width: 400px;
-          width: 100%;
-          box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.4);
-          border: 1px solid rgba(76, 175, 80, 0.3);
-        }
-
-        .auth-card h2 {
-          color: #e8f5e9;
-        }
-
-        .auth-card p {
-          color: #c8e6c9;
-        }
-
         .loading-spinner {
           display: flex;
           justify-content: center;
@@ -566,6 +686,15 @@ export default function SettingsPage() {
               )}
             </div>
           </div>
+
+          <hr className="settings-divider" />
+
+          {/* Backup Section - Layer 2 & 3 */}
+          <BackupSettings
+            api={window.api}
+            vaultData={vaultDataForBackup}
+            onRestoreComplete={handleRestoreComplete}
+          />
 
           <hr className="settings-divider" />
 
@@ -629,6 +758,18 @@ export default function SettingsPage() {
               <button onClick={handlePull} disabled={syncLoading} className="sync-button pull-button">
                 {syncLoading ? 'Pulling...' : '📥 Pull from IPFS'}
               </button>
+              {/* 🛠️ FIX: Fixed broken button style */}
+              <button onClick={testBackup} style={{
+                padding: '0.7rem 1.5rem',
+                borderRadius: '2rem',
+                fontWeight: '600',
+                border: 'none',
+                cursor: 'pointer',
+                background: '#ff9800',
+                color: '#000'
+              }}>
+                🧪 Test Backup (Debug)
+              </button>
             </div>
             {syncCID && (
               <div className="sync-cid">
@@ -637,9 +778,8 @@ export default function SettingsPage() {
             )}
             {syncMessage && (
               <div
-                className={`sync-message ${
-                  syncMessage.includes('✅') ? 'success' : syncMessage.includes('❌') ? 'error' : 'info'
-                }`}
+                className={`sync-message ${syncMessage.includes('✅') ? 'success' : syncMessage.includes('❌') ? 'error' : 'info'
+                  }`}
               >
                 {syncMessage}
               </div>

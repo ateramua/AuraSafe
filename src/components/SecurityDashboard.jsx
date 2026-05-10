@@ -14,11 +14,13 @@ import {
   setAutoSync,
 } from '../lib/api-client';
 import { loadVault } from '../lib/store';
+import BackupSettings from '../components/BackupSettings';
 
 export default function SettingsPage() {
   const [entries, setEntries] = useState([]);
   const [unlocked, setUnlocked] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [vaultDataForBackup, setVaultDataForBackup] = useState(null);
 
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
@@ -43,13 +45,18 @@ export default function SettingsPage() {
         if (vaultData && typeof vaultData === 'object') {
           if (Array.isArray(vaultData)) {
             setEntries(vaultData);
+            // Prepare data for backup
+            setVaultDataForBackup({ entries: vaultData, lastModified: Date.now() });
           } else if (vaultData.entries && Array.isArray(vaultData.entries)) {
             setEntries(vaultData.entries);
+            setVaultDataForBackup({ entries: vaultData.entries, lastModified: Date.now() });
           } else {
             setEntries([]);
+            setVaultDataForBackup({ entries: [], lastModified: Date.now() });
           }
         } else {
           setEntries([]);
+          setVaultDataForBackup({ entries: [], lastModified: Date.now() });
         }
       }
 
@@ -88,6 +95,19 @@ export default function SettingsPage() {
     const score = Math.round((strong / entries.length) * 100);
     setSecurityScore(score);
   }, [entries]);
+
+  // Handle restore completion - reload vault data
+  const handleRestoreComplete = async (restoredData) => {
+    if (restoredData && restoredData.entries) {
+      setEntries(restoredData.entries);
+      setVaultDataForBackup({ entries: restoredData.entries, lastModified: Date.now() });
+      setSyncMessage('✅ Vault restored successfully! Refreshing...');
+      // Reload the page after a short delay to refresh all data
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    }
+  };
 
   if (loading) return <div className="loading-spinner">Loading settings...</div>;
 
@@ -161,6 +181,17 @@ export default function SettingsPage() {
       const result = await syncPull();
       if (result.success) {
         setSyncMessage('✅ Pull successful. Vault updated.');
+        // Refresh entries after pull
+        let vaultData = await loadVault();
+        if (vaultData && typeof vaultData === 'object') {
+          if (Array.isArray(vaultData)) {
+            setEntries(vaultData);
+            setVaultDataForBackup({ entries: vaultData, lastModified: Date.now() });
+          } else if (vaultData.entries && Array.isArray(vaultData.entries)) {
+            setEntries(vaultData.entries);
+            setVaultDataForBackup({ entries: vaultData.entries, lastModified: Date.now() });
+          }
+        }
       } else {
         setSyncMessage(`❌ Pull failed: ${result.error}`);
       }
@@ -551,6 +582,15 @@ export default function SettingsPage() {
               )}
             </div>
           </div>
+
+          <hr className="settings-divider" />
+
+          {/* Backup Section - LAYER 2 & 3 */}
+          <BackupSettings 
+            api={window.api} 
+            vaultData={vaultDataForBackup}
+            onRestoreComplete={handleRestoreComplete}
+          />
 
           <hr className="settings-divider" />
 

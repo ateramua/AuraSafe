@@ -9,6 +9,7 @@ import Store from 'electron-store';
 import { v4 as uuidv4 } from 'uuid';
 import { WebSocketServer } from 'ws';
 import { randomBytes } from 'crypto';
+import BackupManager from '../backup/backup-manager.mjs';
 
 // Import your custom modules
 import {
@@ -28,14 +29,23 @@ import { isBiometricAvailable } from '../crypto/biometric-manager.mjs';
 import { pushToIPFS, pullFromIPFS, getCurrentCID } from '../sync/sync-engine.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const preloadPath = path.join(__dirname, '../preload/preload.cjs');
+
+// ✅ FIXED: Correct preload resolution for both dev and production
+const preloadPath = app.isPackaged
+  ? path.join(process.resourcesPath, 'preload/preload.cjs')
+  : path.join(__dirname, '../preload/preload.cjs');
+
+console.log('📌 Preload path:', preloadPath);
+console.log('📌 Preload exists:', fs.existsSync(preloadPath));
 const isDev = process.env.NODE_ENV === 'development';
 
 let mainWindow;
 let server;
 let db;
 let wsServer;
-let EXTENSION_SECRET; // Will be loaded/generated below
+let EXTENSION_SECRET;
+let backupManager = null;
+let tempBackupManager = null;
 
 // ========== Database helpers ==========
 function getDatabasePath() {
@@ -255,7 +265,29 @@ function injectBaseTag(html) {
 // ========== WebSocket server for browser extension ==========
 function startWebSocketServer() {
   try {
-    wsServer = new WebSocketServer({ port: 8765 });
+    try {
+      wsServer = new WebSocketServer({
+        port: 8765,
+        host: '127.0.0.1',
+      });
+      wsServer.on('error', (err) => {
+        console.warn('WS server error (ignored):', err.message);
+      });
+
+      wsServer.on('listening', () => {
+        console.log('🔌 WebSocket server running on 8765');
+      });
+
+      wsServer.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+          console.log('⚠️ WebSocket already running, skipping');
+        } else {
+          console.error('WebSocket error:', err);
+        }
+      });
+    } catch (err) {
+      console.error('❌ Failed to start WebSocket:', err);
+    }
     console.log('🔌 WebSocket server listening on port 8765');
 
     wsServer.on('connection', (ws, req) => {
@@ -309,52 +341,109 @@ function startWebSocketServer() {
 
 // ========== Create window ==========
 function createWindow(url) {
+  console.log('🪟 Creating BrowserWindow...');
+  console.log('🌍 URL:', url);
+
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 1400,
+    height: 900,
+    x: 100,
+    y: 100,
+    show: true,
+    backgroundColor: '#111111',
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
+      sandbox: false,
       nodeIntegration: false,
       devTools: true,
     },
   });
 
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    console.error('❌ did-fail-load:', errorCode, errorDescription);
+  mainWindow.center();
+
+  mainWindow.on('ready-to-show', () => {
+    console.log('✅ ready-to-show');
+    mainWindow.show();
+    mainWindow.focus();
   });
 
-  mainWindow.webContents.on('crashed', () => {
-    console.error('❌ Renderer process crashed');
+  mainWindow.on('show', () => {
+    console.log('✅ window shown');
   });
-
-  mainWindow.loadURL(url).catch(err => console.error('Failed to load:', err));
-  mainWindow.webContents.openDevTools({ mode: 'right' }); // Keep for debugging
 
   mainWindow.on('closed', () => {
+    console.log('❌ window closed');
     mainWindow = null;
   });
+
+  mainWindow.webContents.on('did-start-loading', () => {
+    console.log('🔄 did-start-loading');
+  });
+
+  mainWindow.webContents.on('did-stop-loading', () => {
+    console.log('✅ did-stop-loading');
+  });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('✅ did-finish-load');
+  });
+
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('❌ did-fail-load');
+    console.error(errorCode, errorDescription);
+  });
+
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    console.error('❌ render-process-gone');
+    console.error(details);
+  });
+
+  mainWindow.webContents.openDevTools({
+    mode: 'detach',
+  });
+
+  mainWindow.loadURL(url)
+    .then(() => {
+      console.log('✅ loadURL success');
+    })
+    .catch((err) => {
+      console.error('❌ loadURL failed');
+      console.error(err);
+    });
 }
 
 // ========== App ready ==========
 app.whenReady().then(async () => {
-  const outPath = app.isPackaged
-    ? path.join(process.resourcesPath, 'out')
-    : path.join(__dirname, '../../out');
+  let outPath;
 
-  console.log('✅ App ready');
-  console.log('📁 Out path:', outPath);
-  console.log('📁 Preload path:', preloadPath);
-  console.log('📁 Preload exists?', fs.existsSync(preloadPath));
-  console.log('📂 Contents of out folder:');
-  try {
-    const files = fs.readdirSync(outPath);
-    console.log(files);
-  } catch (err) {
-    console.error('Could not read out folder:', err);
+  if (app.isPackaged) {
+    outPath = path.join(process.resourcesPath, 'out');
+    if (!fs.existsSync(outPath)) {
+      outPath = path.join(path.dirname(app.getPath('exe')), '../Resources/out');
+    }
+  } else {
+    outPath = path.join(__dirname, '../../out');
   }
 
-  // Initialize database
+  console.log('📦 Environment:', app.isPackaged ? 'production' : 'development');
+  console.log('📂 outPath:', outPath);
+  console.log('📂 outPath exists:', fs.existsSync(outPath));
+
+  const indexPath = path.join(outPath, 'index.html');
+  const nextPath = path.join(outPath, '_next');
+
+  console.log('📄 index.html exists:', fs.existsSync(indexPath));
+  console.log('📁 _next exists:', fs.existsSync(nextPath));
+
+  if (!fs.existsSync(indexPath)) {
+    console.error('❌ CRITICAL: index.html not found at:', indexPath);
+  }
+
+  console.log('✅ App ready');
+  console.log('📁 Preload path:', preloadPath);
+  console.log('📁 Preload exists?', fs.existsSync(preloadPath));
+
   try {
     await initDatabase();
   } catch (err) {
@@ -364,16 +453,194 @@ app.whenReady().then(async () => {
   }
 
   // ========== IPC Handlers ==========
-  // Vault handlers
   ipcMain.handle('vault:isInitialized', async () => {
     const vaultStore = new Store({ name: 'vault' });
     return !!vaultStore.get('masterSalt');
   });
+
   ipcMain.handle('vault:isUnlocked', () => isUnlocked());
+
   ipcMain.handle('vault:unlock', async (event, password) => {
     const success = await unlockVault(password);
     if (success) return { success: true, entries: loadVaultEntries() };
     return { success: false };
+  });
+  // ========== SIMPLIFIED BACKUP HANDLERS ==========
+
+  ipcMain.handle('backup:init-temp', async () => {
+    console.log('[Backup] init-temp called');
+    return { success: true };
+  });
+
+  ipcMain.handle('backup:import-file-pre-vault', async () => {
+    console.log('[Backup] import-file-pre-vault called');
+    const { dialog } = require('electron');
+    const fs = require('fs');
+
+    const result = await dialog.showOpenDialog({
+      title: 'Import Vault Backup',
+      filters: [
+        { name: 'AuraSafe Backup', extensions: ['aura'] },
+        { name: 'All Files', extensions: ['*'] }
+      ],
+      properties: ['openFile']
+    });
+
+    if (result.canceled || !result.filePaths.length) {
+      return { success: false, cancelled: true };
+    }
+
+    const filePath = result.filePaths[0];
+
+    try {
+      const fileContent = fs.readFileSync(filePath, 'utf-8');
+      const backupContainer = JSON.parse(fileContent);
+
+      if (backupContainer.version !== '1.0') {
+        throw new Error(`Incompatible backup version: ${backupContainer.version}`);
+      }
+
+      console.log('[Backup] Import successful, entries:', backupContainer.data?.entries?.length || 0);
+
+      return {
+        success: true,
+        backupData: backupContainer,
+        filePath: filePath
+      };
+    } catch (error) {
+      console.error('[Backup] Import failed:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('backup:icloud-restore-pre-vault', async () => {
+    console.log('[Backup] icloud-restore-pre-vault called');
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+
+    const iCloudBackupDir = path.join(
+      os.homedir(),
+      'Library',
+      'Mobile Documents',
+      'com~apple~CloudDocs',
+      'AuraSafe Backups'
+    );
+
+    if (!fs.existsSync(iCloudBackupDir)) {
+      return { success: false, error: 'No iCloud backups found. Please ensure iCloud Drive is enabled.' };
+    }
+
+    const backupFiles = fs.readdirSync(iCloudBackupDir)
+      .filter(f => f.endsWith('.aura'))
+      .map(f => ({
+        path: path.join(iCloudBackupDir, f),
+        name: f,
+        modified: fs.statSync(path.join(iCloudBackupDir, f)).mtime
+      }))
+      .sort((a, b) => b.modified - a.modified);
+
+    if (backupFiles.length === 0) {
+      return { success: false, error: 'No backup files found in iCloud' };
+    }
+
+    const latestBackup = backupFiles[0];
+    const fileContent = fs.readFileSync(latestBackup.path, 'utf-8');
+    const backupContainer = JSON.parse(fileContent);
+
+    return {
+      success: true,
+      backupData: backupContainer,
+      backupDate: backupContainer.timestamp
+    };
+  });
+
+  ipcMain.handle('backup:export', async (event, vaultData) => {
+    const { dialog } = require('electron');
+    const fs = require('fs');
+    const crypto = require('crypto');
+
+    const result = await dialog.showSaveDialog({
+      title: 'Export Vault Backup',
+      defaultPath: `AuraSafe_Backup_${Date.now()}.aura`,
+      filters: [
+        { name: 'AuraSafe Backup', extensions: ['aura'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    });
+
+    if (result.canceled) {
+      return { success: false, cancelled: true };
+    }
+
+    const filePath = result.filePath;
+
+    try {
+      const backupContainer = {
+        version: '1.0',
+        timestamp: Date.now(),
+        data: vaultData,
+        checksum: null
+      };
+
+      const backupString = JSON.stringify(backupContainer.data);
+      backupContainer.checksum = crypto
+        .createHash('sha256')
+        .update(backupString)
+        .digest('hex');
+
+      fs.writeFileSync(filePath, JSON.stringify(backupContainer, null, 2));
+
+      return { success: true, filePath };
+    } catch (error) {
+      console.error('[Backup] Export failed:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('backup:find-local', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+
+    const documentsPath = path.join(os.homedir(), 'Documents');
+    const backupsDir = path.join(documentsPath, 'AuraSafe Backups');
+
+    if (!fs.existsSync(backupsDir)) {
+      return [];
+    }
+
+    const files = fs.readdirSync(backupsDir)
+      .filter(f => f.endsWith('.aura'))
+      .map(f => ({
+        name: f,
+        path: path.join(backupsDir, f),
+        modified: fs.statSync(path.join(backupsDir, f)).mtime
+      }))
+      .sort((a, b) => b.modified - a.modified);
+
+    return files;
+  });
+
+  // Placeholder for other backup methods
+  ipcMain.handle('backup:import', async () => {
+    return { success: false, error: 'Use import-file-pre-vault for pre-vault import' };
+  });
+
+  ipcMain.handle('backup:icloud:available', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+    const iCloudPath = path.join(os.homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs');
+    return fs.existsSync(iCloudPath);
+  });
+
+  ipcMain.handle('backup:icloud:backup', async (event, vaultData) => {
+    return { success: false, error: 'iCloud backup not configured yet' };
+  });
+
+  ipcMain.handle('backup:icloud:restore', async () => {
+    return { success: false, error: 'iCloud restore not configured yet' };
   });
   ipcMain.handle('vault:init', async (event, masterPassword) => {
     try {
@@ -384,14 +651,17 @@ app.whenReady().then(async () => {
       return false;
     }
   });
+
   ipcMain.handle('vault:lock', () => {
     lockVault();
     return true;
   });
+
   ipcMain.handle('vault:getEntries', () => {
     if (!isUnlocked()) throw new Error('Vault locked');
     return loadVaultEntries();
   });
+
   ipcMain.handle('vault:saveEntry', async (event, entry) => {
     if (!isUnlocked()) throw new Error('Vault locked');
     const entries = loadVaultEntries();
@@ -404,6 +674,7 @@ app.whenReady().then(async () => {
     }
     return entries;
   });
+
   ipcMain.handle('vault:deleteEntry', async (event, id) => {
     if (!isUnlocked()) throw new Error('Vault locked');
     const entries = loadVaultEntries();
@@ -415,18 +686,18 @@ app.whenReady().then(async () => {
     return newEntries;
   });
 
-  // Sync handlers
   ipcMain.handle('sync:push', async () => {
     try { return { success: true, cid: await pushToIPFS() }; }
     catch (err) { return { success: false, error: err.message }; }
   });
+
   ipcMain.handle('sync:pull', async () => {
     try { await pullFromIPFS(); return { success: true }; }
     catch (err) { return { success: false, error: err.message }; }
   });
+
   ipcMain.handle('sync:getCID', () => getCurrentCID());
 
-  // Biometric handlers
   ipcMain.handle('biometric:isAvailable', async () => isBiometricAvailable());
   ipcMain.handle('biometric:isEnabled', async () => await isBiometricUnlockAvailable());
   ipcMain.handle('biometric:enable', async () => await enableBiometricUnlock());
@@ -437,7 +708,6 @@ app.whenReady().then(async () => {
     return { success: false, error: 'Authentication failed' };
   });
 
-  // User settings handlers
   ipcMain.handle('get-user-setting', async (event, key, defaultValue) => {
     const currentUser = userService.getCurrentUser();
     if (!currentUser) return { success: true, data: defaultValue };
@@ -445,6 +715,7 @@ app.whenReady().then(async () => {
     const row = await db.get(`SELECT value FROM user_settings WHERE user_id = ? AND key = ?`, [currentUser.id, key]);
     return { success: true, data: row ? row.value : defaultValue };
   });
+
   ipcMain.handle('save-user-setting', async (event, key, value) => {
     const currentUser = userService.getCurrentUser();
     if (!currentUser) return { success: false, error: 'Not logged in' };
@@ -453,7 +724,6 @@ app.whenReady().then(async () => {
     return { success: true };
   });
 
-  // General
   ipcMain.handle('ping', () => 'pong from main process');
 
   // ========== Serve the app ==========
@@ -462,107 +732,41 @@ app.whenReady().then(async () => {
   } else {
     const appServer = express();
 
-    // ===== TEST ROUTE =====
-    appServer.get('/test', (req, res) => {
-      res.send('Server is running!');
-    });
-
-    // Logging middleware
     appServer.use((req, res, next) => {
       console.log(`📡 ${req.method} ${req.url}`);
       next();
     });
 
-    // Middleware to inject base tag into HTML files (with detailed logging)
-    appServer.use((req, res, next) => {
-      console.log(`  🧪 Middleware entered for ${req.url}`);
-      let filePath = path.join(outPath, req.path);
-      // If the path ends with '/', we need to look for index.html
-      if (filePath.endsWith(path.sep)) {
-        filePath = filePath.slice(0, -1);
-      }
-      console.log(`  📂 Initial filePath: ${filePath}`);
-      let exists = fs.existsSync(filePath);
-      console.log(`  📂 Exists? ${exists}`);
-      if (exists && fs.statSync(filePath).isDirectory()) {
-        console.log(`  📁 It's a directory, trying index.html`);
-        // Try index.html inside the directory
-        let indexPath = path.join(filePath, 'index.html');
-        if (!fs.existsSync(indexPath)) {
-          // Also try the root index.html (for cases like out/index.html)
-          indexPath = path.join(outPath, 'index.html');
-        }
-        if (fs.existsSync(indexPath)) {
-          filePath = indexPath;
-          console.log(`  📁 Found index.html at: ${filePath}`);
-        } else {
-          console.log(`  ❌ No index.html found in directory`);
-          next();
-          return;
-        }
-      }
-      const fileExists = fs.existsSync(filePath);
-      console.log(`  📂 Final file exists? ${fileExists}`);
-      if (fileExists && path.extname(filePath) === '.html') {
-        console.log(`  ✅ Serving HTML file: ${filePath}`);
-        const html = fs.readFileSync(filePath, 'utf-8');
-        const injected = injectBaseTag(html);
-        res.setHeader('Content-Type', 'text/html');
-        res.setHeader('Content-Security-Policy', "default-src 'self' app:; script-src 'self' 'unsafe-inline' 'unsafe-eval' app:; style-src 'self' 'unsafe-inline' app:;");
-        res.send(injected);
-        console.log(`  ✅ Served HTML with base tag: ${req.url}`);
-        return;
-      }
-      console.log(`  ❌ Not serving HTML: ${filePath}`);
-      next();
-    });
+    if (fs.existsSync(outPath)) {
+      appServer.use(express.static(outPath));
+      console.log('✅ Static files being served from:', outPath);
+    } else {
+      console.error('❌ Cannot serve static files - outPath missing:', outPath);
+    }
 
-    // Serve static assets
-    appServer.use(express.static(outPath));
-
-    // SPA fallback
     appServer.get('*', (req, res) => {
-      // Try multiple possible index.html locations
-      const possiblePaths = [
-        path.join(outPath, 'index.html'),
-        path.join(outPath, 'index', 'index.html'),
-        path.join(outPath, req.path, 'index.html'),
-      ];
-      let indexPath = null;
-      for (const p of possiblePaths) {
-        if (fs.existsSync(p)) {
-          indexPath = p;
-          break;
-        }
+      const indexPath = path.join(outPath, 'index.html');
+      if (!fs.existsSync(indexPath)) {
+        console.error('❌ index.html not found at:', indexPath);
+        return res.status(404).send(`index.html not found at ${indexPath}`);
       }
-      if (indexPath) {
-        let html = fs.readFileSync(indexPath, 'utf-8');
-        html = injectBaseTag(html);
-        res.setHeader('Content-Type', 'text/html');
-        res.setHeader('Content-Security-Policy', "default-src 'self' app:; script-src 'self' 'unsafe-inline' 'unsafe-eval' app:; style-src 'self' 'unsafe-inline' app:;");
-        res.send(html);
-        console.log(`  ➡️ Fallback: served index.html from ${indexPath} for ${req.url}`);
-      } else {
-        console.error(`❌ No index.html found in any location`);
-        res.status(404).send('Not Found');
+      console.log('📄 Serving index.html for:', req.path);
+      let html = fs.readFileSync(indexPath, 'utf-8');
+      if (!/<base\s+href/i.test(html)) {
+        html = html.replace('<head>', '<head><base href="/">');
       }
+      res.setHeader('Content-Type', 'text/html');
+      res.send(html);
     });
 
     server = appServer.listen(0, () => {
       const port = server.address().port;
       const url = `http://localhost:${port}`;
       console.log(`📡 HTTP server running at ${url}`);
-      // Check if index.html exists
-      const indexPath = path.join(outPath, 'index.html');
-      if (fs.existsSync(indexPath)) {
-        console.log(`✅ index.html found at ${indexPath}`);
-      } else {
-        console.error(`❌ index.html NOT found at ${indexPath}`);
-      }
+      console.log(`📁 Serving from: ${outPath}`);
       createWindow(url);
     });
 
-    // Start WebSocket server for browser extension
     startWebSocketServer();
   }
 });

@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Sidebar from '../components/Sidebar';
 import CategoryModal from '../components/CategoryModal';
-import EntryModal from '../components/EntryModal'; // still used by CategoryModal, but not directly here
+import EntryModal from '../components/EntryModal';
+import RestoreScreen from '../components/RestoreScreen';
+import { isInitialized, initVault, unlockVault } from '../lib/api-client';
 
 export default function Vault() {
   const router = useRouter();
@@ -17,6 +19,8 @@ export default function Vault() {
   const [syncMessage, setSyncMessage] = useState('');
   const [syncLoading, setSyncLoading] = useState(false);
   const [unlockError, setUnlockError] = useState(null);
+  const [showRestore, setShowRestore] = useState(false);
+  const [pendingRestoreData, setPendingRestoreData] = useState(null);
 
   // State for the category modal
   const [modalCategory, setModalCategory] = useState(null);
@@ -47,6 +51,13 @@ export default function Vault() {
       try {
         const isInit = await api.isInitialized();
         setInitialized(isInit);
+        
+        // Check if there's a pending restore from sessionStorage
+        const pending = sessionStorage.getItem('pendingRestore');
+        if (pending) {
+          setPendingRestoreData(JSON.parse(pending));
+          sessionStorage.removeItem('pendingRestore');
+        }
 
         if (isInit) {
           const isUnlocked = await api.isUnlocked();
@@ -76,6 +87,21 @@ export default function Vault() {
     };
     check();
   }, [initialized, unlocked]);
+
+  const handleRestoreComplete = async (backupData) => {
+    // Process the backup and create vault
+    setPendingRestoreData(backupData);
+    // Trigger vault creation with backup data
+    if (api && api.restoreFromBackup) {
+      await api.restoreFromBackup(backupData);
+    }
+    window.location.reload();
+  };
+
+  const handleCreateNew = () => {
+    setShowRestore(false);
+    // Show normal initialization screen
+  };
 
   const handleInit = async (e) => {
     e.preventDefault();
@@ -179,6 +205,17 @@ export default function Vault() {
   // ------------------------
   // UI States
   // ------------------------
+  
+  // If vault doesn't exist, show restore screen first (Option 1 & 2)
+  if (initialized === false && !showRestore) {
+    return (
+      <RestoreScreen 
+        onRestoreComplete={handleRestoreComplete}
+        onSkip={handleCreateNew}
+      />
+    );
+  }
+
   if (loading) return <div style={styles.container}>Loading...</div>;
   if (error) return <div style={styles.container}>Error: {error}</div>;
 

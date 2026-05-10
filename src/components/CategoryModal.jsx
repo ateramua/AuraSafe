@@ -16,8 +16,24 @@ export default function CategoryModal({ isOpen, onClose, category, api }) {
     const [loading, setLoading] = useState(true);
     const [showEntryModal, setShowEntryModal] = useState(false);
     const [editingEntry, setEditingEntry] = useState(null);
+    const [autofillStatus, setAutofillStatus] = useState({});
+    const [copiedField, setCopiedField] = useState(null);
 
     const entryType = categoryToType[category];
+
+    // Load autofill preferences from localStorage
+    const loadAutofillPrefs = () => {
+        const saved = localStorage.getItem('aurasafe_autofill_prefs');
+        if (saved) {
+            setAutofillStatus(JSON.parse(saved));
+        }
+    };
+
+    // Save autofill preferences to localStorage
+    const saveAutofillPrefs = (newStatus) => {
+        localStorage.setItem('aurasafe_autofill_prefs', JSON.stringify(newStatus));
+        setAutofillStatus(newStatus);
+    };
 
     const fetchEntries = async () => {
         if (!api || category === 'help') {
@@ -32,6 +48,7 @@ export default function CategoryModal({ isOpen, onClose, category, api }) {
                 filtered = allEntries.filter(e => e.type === entryType);
             }
             setEntries(filtered);
+            loadAutofillPrefs();
         } catch (err) {
             console.error('Failed to fetch entries:', err);
         } finally {
@@ -80,6 +97,148 @@ export default function CategoryModal({ isOpen, onClose, category, api }) {
         }
     };
 
+    // Copy text to clipboard with feedback
+    const copyToClipboard = async (text, fieldName, entryId) => {
+        try {
+            await navigator.clipboard.writeText(text);
+            setCopiedField(`${entryId}-${fieldName}`);
+            setTimeout(() => setCopiedField(null), 2000);
+        } catch (err) {
+            console.error('Failed to copy:', err);
+            // Fallback for older browsers
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            setCopiedField(`${entryId}-${fieldName}`);
+            setTimeout(() => setCopiedField(null), 2000);
+        }
+    };
+
+    // Mask a value (show only first 2 and last 2 characters)
+    const maskValue = (value) => {
+        if (!value) return '';
+        if (value.length <= 4) return '••••••';
+        return value.substring(0, 2) + '••••' + value.substring(value.length - 2);
+    };
+
+    // Launch URL in external browser
+    const handleLaunch = async (entry) => {
+        if (!entry.url) {
+            alert('No URL saved for this entry');
+            return;
+        }
+
+        let url = entry.url;
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            url = 'https://' + url;
+        }
+
+        try {
+            // Copy credentials BEFORE opening browser (avoids focus issues)
+            if (autofillStatus[entry.id] && (entry.username || entry.password)) {
+                let credentialText = '';
+                if (entry.username) credentialText += entry.username;
+                if (entry.password) credentialText += (credentialText ? '\n' : '') + entry.password;
+                
+                // Use fallback method to avoid focus issues
+                const textarea = document.createElement('textarea');
+                textarea.value = credentialText;
+                textarea.style.position = 'fixed';
+                textarea.style.top = '-9999px';
+                textarea.style.left = '-9999px';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+            }
+            
+            // Open URL in external browser
+            if (window.api && typeof window.api.openExternal === 'function') {
+                await window.api.openExternal(url);
+            } else if (window.electronAPI && typeof window.electronAPI.openExternal === 'function') {
+                await window.electronAPI.openExternal(url);
+            } else {
+                window.open(url, '_blank');
+            }
+            
+            if (autofillStatus[entry.id] && (entry.username || entry.password)) {
+                setTimeout(() => {
+                    alert(`✓ Website launched!\n\nCredentials copied to clipboard.\nPaste them into the login form.\n\nUsername: ${entry.username || '(not set)'}\nPassword: ${entry.password ? '••••••••' : '(not set)'}`);
+                }, 500);
+            }
+        } catch (err) {
+            console.error('Failed to launch URL:', err);
+            alert('Failed to open URL: ' + err.message);
+        }
+    };
+
+    // Toggle autofill for an entry
+    const toggleAutofill = (entryId) => {
+        const newStatus = { ...autofillStatus, [entryId]: !autofillStatus[entryId] };
+        saveAutofillPrefs(newStatus);
+    };
+
+    // Helper to get display text for an entry based on category
+    const getEntryDisplay = (entry) => {
+        // For 'all' category, use the entry's actual type
+        const displayType = entryType || entry.type;
+        
+        switch (displayType) {
+            case 'credential':
+                return {
+                    primary: entry.name || entry.title || 'Untitled',
+                    username: entry.username,
+                    usernameMasked: maskValue(entry.username),
+                    password: entry.password,
+                    passwordMasked: '••••••••',
+                    url: entry.url,
+                    hasUrl: !!entry.url,
+                    type: 'credential'
+                };
+            case 'contact':
+                return {
+                    primary: entry.name || entry.title || 'Untitled Address',
+                    address: entry.addressLine,
+                    cityState: [entry.city, entry.state, entry.zip].filter(Boolean).join(', '),
+                    contact: entry.phone || entry.email,
+                    type: 'contact'
+                };
+            case 'creditCard':
+                return {
+                    primary: entry.name || entry.title || 'Untitled Card',
+                    cardNumber: entry.cardNumber ? `****${entry.cardNumber.slice(-4)}` : 'No card number',
+                    expiry: `Expires: ${entry.expiry || 'N/A'}`,
+                    cvv: entry.cvv ? '•••' : null,
+                    type: 'creditCard'
+                };
+            case 'bankAccount':
+                return {
+                    primary: entry.name || entry.accountHolder || 'Untitled Account',
+                    bankName: entry.bankName || 'Bank account',
+                    accountNumber: entry.accountNumber ? `****${entry.accountNumber.slice(-4)}` : 'No account number',
+                    accountType: entry.accountType || 'Checking/Savings',
+                    type: 'bankAccount'
+                };
+            case 'driverLicense':
+                return {
+                    primary: entry.name || entry.title || 'Untitled License',
+                    licenseNumber: entry.licenseNumber ? maskValue(entry.licenseNumber) : 'No license',
+                    state: entry.state || 'State not specified',
+                    expiry: `Expires: ${entry.expiry || 'N/A'}`,
+                    type: 'driverLicense'
+                };
+            default:
+                return {
+                    primary: entry.name || entry.title || 'Untitled',
+                    secondary: entry.username || entry.email,
+                    type: 'unknown'
+                };
+        }
+    };
+
     if (!isOpen) return null;
 
     // Help category special display
@@ -114,6 +273,8 @@ export default function CategoryModal({ isOpen, onClose, category, api }) {
         driverLicenses: "Driver's Licenses",
     }[category] || category;
 
+    const isPasswordCategory = category === 'passwords';
+
     return (
         <>
             <div style={styles.overlay} onClick={onClose}>
@@ -138,34 +299,137 @@ export default function CategoryModal({ isOpen, onClose, category, api }) {
                             <div style={styles.empty}>No entries yet. Click "Add New" to create one.</div>
                         ) : (
                             <div style={styles.list}>
-                                {entries.map(entry => (
-                                    <div key={entry.id} style={styles.listItem}>
-                                        <div style={styles.itemInfo}>
-                                            <strong>{entry.name || 'Unnamed'}</strong>
-                                            {entry.username && <span> – {entry.username}</span>}
-                                            {entry.cardNumber && <span> – ****{entry.cardNumber.slice(-4)}</span>}
-                                            {entry.bankName && <span> – {entry.bankName}</span>}
-                                            {entry.licenseNumber && <span> – {entry.licenseNumber}</span>}
+                                {entries.map(entry => {
+                                    const display = getEntryDisplay(entry);
+                                    const isCredential = display.type === 'credential';
+                                    
+                                    return (
+                                        <div key={entry.id} style={styles.listItem}>
+                                            <div style={styles.itemInfo} onClick={() => handleEdit(entry)}>
+                                                <div style={styles.itemPrimary}>{display.primary}</div>
+                                                
+                                                {isCredential && (
+                                                    <>
+                                                        {display.username && (
+                                                            <div style={styles.copyableRow}>
+                                                                <span style={styles.fieldLabel}>Username:</span>
+                                                                <span 
+                                                                    style={styles.copyableValue}
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        copyToClipboard(display.username, 'username', entry.id);
+                                                                    }}
+                                                                    title="Click to copy username"
+                                                                >
+                                                                    {display.usernameMasked}
+                                                                    {copiedField === `${entry.id}-username` && (
+                                                                        <span style={styles.copiedIndicator}> ✓ Copied!</span>
+                                                                    )}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                        {display.password && (
+                                                            <div style={styles.copyableRow}>
+                                                                <span style={styles.fieldLabel}>Password:</span>
+                                                                <span 
+                                                                    style={styles.copyableValue}
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        copyToClipboard(display.password, 'password', entry.id);
+                                                                    }}
+                                                                    title="Click to copy password"
+                                                                >
+                                                                    {display.passwordMasked}
+                                                                    {copiedField === `${entry.id}-password` && (
+                                                                        <span style={styles.copiedIndicator}> ✓ Copied!</span>
+                                                                    )}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                        {display.url && (
+                                                            <div style={styles.itemUrl}>🔗 URL</div>
+                                                        )}
+                                                    </>
+                                                )}
+                                                
+                                                {display.type === 'contact' && (
+                                                    <>
+                                                        {display.address && <div style={styles.itemSecondary}>{display.address}</div>}
+                                                        {display.cityState && <div style={styles.itemTertiary}>{display.cityState}</div>}
+                                                        {display.contact && <div style={styles.itemDetail}>{display.contact}</div>}
+                                                    </>
+                                                )}
+                                                
+                                                {display.type === 'creditCard' && (
+                                                    <>
+                                                        <div style={styles.itemSecondary}>{display.cardNumber}</div>
+                                                        <div style={styles.itemTertiary}>{display.expiry}</div>
+                                                        {display.cvv && <div style={styles.itemDetail}>CVV: {display.cvv}</div>}
+                                                    </>
+                                                )}
+                                                
+                                                {display.type === 'bankAccount' && (
+                                                    <>
+                                                        <div style={styles.itemSecondary}>{display.bankName}</div>
+                                                        <div style={styles.itemTertiary}>{display.accountNumber}</div>
+                                                        <div style={styles.itemDetail}>{display.accountType}</div>
+                                                    </>
+                                                )}
+                                                
+                                                {display.type === 'driverLicense' && (
+                                                    <>
+                                                        <div style={styles.itemSecondary}>License: {display.licenseNumber}</div>
+                                                        <div style={styles.itemTertiary}>{display.state}</div>
+                                                        <div style={styles.itemDetail}>{display.expiry}</div>
+                                                    </>
+                                                )}
+                                            </div>
+                                            
+                                            <div style={styles.itemActions}>
+                                                {isCredential && display.url && (
+                                                    <>
+                                                        <button
+                                                            style={styles.launchButton}
+                                                            onClick={() => handleLaunch(entry)}
+                                                            title="Launch website"
+                                                        >
+                                                            🌐 Launch
+                                                        </button>
+                                                        <button
+                                                            style={{
+                                                                ...styles.autofillToggle,
+                                                                background: autofillStatus[entry.id] ? '#2E7D32' : '#4B5563'
+                                                            }}
+                                                            onClick={() => toggleAutofill(entry.id)}
+                                                            title={autofillStatus[entry.id] ? 'Autofill ON - Click to disable' : 'Autofill OFF - Click to enable'}
+                                                        >
+                                                            {autofillStatus[entry.id] ? '🔓 Auto-fill ON' : '🔒 Auto-fill OFF'}
+                                                        </button>
+                                                    </>
+                                                )}
+                                                <button style={styles.editButton} onClick={() => handleEdit(entry)}>
+                                                    Edit
+                                                </button>
+                                                <button style={styles.deleteButton} onClick={() => handleDelete(entry.id)}>
+                                                    Delete
+                                                </button>
+                                            </div>
                                         </div>
-                                        <div style={styles.itemActions}>
-                                            <button style={styles.editButton} onClick={() => handleEdit(entry)}>Edit</button>
-                                            <button style={styles.deleteButton} onClick={() => handleDelete(entry.id)}>Delete</button>
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
                 </div>
             </div>
 
-            {/* EntryModal with higher zIndex to ensure it's visible */}
             <EntryModal
                 isOpen={showEntryModal}
                 entry={editingEntry}
-                category={category} // <--- pass the current category here
+                category={category}
                 onClose={() => setShowEntryModal(false)}
                 onSave={handleSaveEntry}
+                zIndex={2100}
             />
         </>
     );
@@ -189,7 +453,7 @@ const styles = {
         background: 'linear-gradient(145deg, #1F2A1F, #172417)',
         borderRadius: '1.5rem',
         width: '90%',
-        maxWidth: '700px',
+        maxWidth: '850px',
         maxHeight: '85vh',
         display: 'flex',
         flexDirection: 'column',
@@ -277,30 +541,114 @@ const styles = {
         justifyContent: 'space-between',
         alignItems: 'center',
         border: '1px solid #2d4a2d',
+        gap: '1rem',
+        flexWrap: 'wrap',
     },
     itemInfo: {
         flex: 1,
-        fontSize: '0.9rem',
+        cursor: 'pointer',
+        minWidth: '200px',
+    },
+    itemPrimary: {
+        fontSize: '0.95rem',
+        fontWeight: 600,
         color: '#F3F4F6',
+        marginBottom: '6px',
+    },
+    copyableRow: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        marginBottom: '4px',
+        fontSize: '0.8rem',
+        flexWrap: 'wrap',
+    },
+    fieldLabel: {
+        color: '#9CA3AF',
+        minWidth: '70px',
+    },
+    copyableValue: {
+        color: '#C8E6C9',
+        cursor: 'pointer',
+        padding: '2px 6px',
+        borderRadius: '4px',
+        transition: 'background 0.2s ease',
+        fontFamily: "'Monaco', 'Menlo', monospace",
+        ':hover': {
+            background: 'rgba(76, 175, 80, 0.2)',
+        },
+    },
+    copiedIndicator: {
+        color: '#10B981',
+        fontSize: '0.7rem',
+        marginLeft: '6px',
+    },
+    itemSecondary: {
+        fontSize: '0.8rem',
+        color: '#9CA3AF',
+        marginBottom: '2px',
+    },
+    itemTertiary: {
+        fontSize: '0.75rem',
+        color: '#4caf50',
+        marginBottom: '2px',
+    },
+    itemDetail: {
+        fontSize: '0.7rem',
+        color: '#718096',
+        marginTop: '2px',
+    },
+    itemUrl: {
+        fontSize: '0.7rem',
+        color: '#60A5FA',
+        marginTop: '4px',
     },
     itemActions: {
         display: 'flex',
         gap: '0.5rem',
+        flexWrap: 'wrap',
+        justifyContent: 'flex-end',
+    },
+    launchButton: {
+        background: '#3B82F6',
+        color: '#fff',
+        border: 'none',
+        padding: '0.35rem 0.7rem',
+        borderRadius: '0.5rem',
+        cursor: 'pointer',
+        fontSize: '0.7rem',
+        fontWeight: '500',
+        whiteSpace: 'nowrap',
+    },
+    autofillToggle: {
+        color: '#fff',
+        border: 'none',
+        padding: '0.35rem 0.7rem',
+        borderRadius: '0.5rem',
+        cursor: 'pointer',
+        fontSize: '0.7rem',
+        fontWeight: '500',
+        whiteSpace: 'nowrap',
+        transition: 'background 0.2s ease',
     },
     editButton: {
         background: '#ffc107',
         color: '#000',
         border: 'none',
-        padding: '0.25rem 0.5rem',
-        borderRadius: '0.25rem',
+        padding: '0.35rem 0.7rem',
+        borderRadius: '0.5rem',
         cursor: 'pointer',
+        fontSize: '0.7rem',
+        fontWeight: '500',
     },
     deleteButton: {
         background: '#dc3545',
         color: '#fff',
         border: 'none',
-        padding: '0.25rem 0.5rem',
-        borderRadius: '0.25rem',
+        padding: '0.35rem 0.7rem',
+        borderRadius: '0.5rem',
         cursor: 'pointer',
+        fontSize: '0.7rem',
+        fontWeight: '500',
     },
 };

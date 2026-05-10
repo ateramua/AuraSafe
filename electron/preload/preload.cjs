@@ -1,10 +1,9 @@
-// electron/preload/preload.cjs
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, shell } = require('electron');
 
 console.log('🔌 Preload script loaded');
 
 try {
-  contextBridge.exposeInMainWorld('api', {
+  const api = {
     // General
     ping: () => ipcRenderer.invoke('ping'),
 
@@ -34,15 +33,48 @@ try {
       getCID: () => ipcRenderer.invoke('sync:getCID'),
     },
 
-    // Settings (user preferences)
+    // Settings
     settings: {
       getAutoSync: () => ipcRenderer.invoke('get-user-setting', 'autoSyncEnabled', 'true'),
       setAutoSync: (enabled) => ipcRenderer.invoke('save-user-setting', 'autoSyncEnabled', enabled ? 'true' : 'false'),
-      // Add other settings as needed
     },
-  });
+
+    // Open external URL
+    openExternal: async (url) => {
+      console.log('[API] openExternal called with URL:', url);
+      const result = await shell.openExternal(url);
+      return { success: true, result };
+    },
+
+    // Autofill
+    autofill: async (data) => {
+      console.log('[API] autofill called for URL:', data.url);
+      return { success: true };
+    },
+
+    // 🔥 Pre-vault backup methods (available before initialization)
+    backupPreVault: {
+      initTemp: () => ipcRenderer.invoke('backup:init-temp'),
+      importFile: () => ipcRenderer.invoke('backup:import-file-pre-vault'),
+      iCloudRestore: () => ipcRenderer.invoke('backup:icloud-restore-pre-vault'),
+    },
+
+    // Post-vault backup methods
+    backup: {
+      export: (vaultData) => ipcRenderer.invoke('backup:export', vaultData),
+      import: () => ipcRenderer.invoke('backup:import'),
+      iCloudAvailable: () => ipcRenderer.invoke('backup:icloud:available'),
+      iCloudBackup: (vaultData) => ipcRenderer.invoke('backup:icloud:backup', vaultData),
+      iCloudRestore: () => ipcRenderer.invoke('backup:icloud:restore'),
+      findLocal: () => ipcRenderer.invoke('backup:find-local'),
+    },
+  };
+
+  contextBridge.exposeInMainWorld('api', api);
 
   console.log('✅ API exposed successfully as window.api');
+  console.log('📋 backupPreVault methods:', Object.keys(api.backupPreVault || {}));
+  console.log('📋 backup methods:', Object.keys(api.backup || {}));
 } catch (err) {
   console.error('❌ Failed to expose API:', err);
 }

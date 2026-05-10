@@ -2,6 +2,7 @@
   "name": "aurasafe",
   "version": "0.1.0",
   "description": "A spiritual, mindful password manager desktop app with browser extensions",
+  "author": "AuraSafe Team",
   "main": "electron/main/index.mjs",
   "type": "module",
   "scripts": {
@@ -35,7 +36,7 @@
   "devDependencies": {
     "concurrently": "^8.2.2",
     "cross-env": "^10.1.0",
-    "electron": "^30.0.0",
+    "electron": "^30.5.1",
     "electron-builder": "^26.8.1",
     "open-cli": "^7.2.0",
     "rimraf": "^6.0.1",
@@ -44,23 +45,31 @@
     "web-ext": "^7.5.0"
   },
   "build": {
-    "appId": "com.spiritual.passwordmanager",
-    "productName": "Spiritual Password Manager",
+    "appId": "com.aurasafe.app",
+    "productName": "AuraSafe",
     "directories": {
       "output": "release"
     },
+    "asar": true,
     "asarUnpack": [
       "node_modules/sqlite3",
       "node_modules/keytar"
     ],
     "files": [
-      "out/**/*",
       "electron/**/*",
-      "src/db/data/**/*",
-      "src/preload/**/*",
+      "src/**/*",
       "node_modules/**/*"
     ],
     "extraResources": [
+      {
+        "from": "out",
+        "to": "out",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "electron/preload/",
+        "to": "preload"
+      },
       {
         "from": "src/db/data/",
         "to": "db/data/"
