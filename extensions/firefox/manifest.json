@@ -8,11 +8,12 @@
     "storage",
     "tabs",
     "activeTab",
-    "<all_urls>"
+    "<all_urls>",
+    "file://*/*"
   ],
   
   "background": {
-    "scripts": ["background-firefox.js"],
+    "scripts": ["background.js"],
     "persistent": true
   },
   

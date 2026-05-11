@@ -46,10 +46,10 @@ try {
       return { success: true, result };
     },
 
-    // Autofill
+    // Autofill queueing
     autofill: async (data) => {
-      console.log('[API] autofill called for URL:', data.url);
-      return { success: true };
+      console.log('[API] autofill called for URL:', data?.url);
+      return ipcRenderer.invoke('autofill', data);
     },
 
     // 🔥 Pre-vault backup methods (available before initialization)

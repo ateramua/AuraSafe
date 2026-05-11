@@ -137,12 +137,20 @@ export default function CategoryModal({ isOpen, onClose, category, api }) {
         }
 
         try {
-            // Copy credentials BEFORE opening browser (avoids focus issues)
+            // Queue autofill request with the extension before opening browser
             if (autofillStatus[entry.id] && (entry.username || entry.password)) {
+                try {
+                    if (window.api && typeof window.api.autofill === 'function') {
+                        await window.api.autofill({ entry, url });
+                    }
+                } catch (err) {
+                    console.warn('Autofill request failed:', err);
+                }
+
                 let credentialText = '';
                 if (entry.username) credentialText += entry.username;
                 if (entry.password) credentialText += (credentialText ? '\n' : '') + entry.password;
-                
+
                 // Use fallback method to avoid focus issues
                 const textarea = document.createElement('textarea');
                 textarea.value = credentialText;
@@ -154,7 +162,7 @@ export default function CategoryModal({ isOpen, onClose, category, api }) {
                 document.execCommand('copy');
                 document.body.removeChild(textarea);
             }
-            
+
             // Open URL in external browser
             if (window.api && typeof window.api.openExternal === 'function') {
                 await window.api.openExternal(url);

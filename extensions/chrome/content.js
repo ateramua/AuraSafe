@@ -70,30 +70,30 @@
   /**
    * Enhanced field detection with multiple selectors
    */
-  function findUsernameField() {
+  function findUsernameField(root = document) {
     const selectors = [
-      'input[type="text"]',
+      'input[autocomplete="username"]',
       'input[type="email"]',
+      'input[type="text"]',
       'input[name*="user" i]',
       'input[name*="email" i]',
       'input[name*="login" i]',
       'input[id*="user" i]',
       'input[id*="email" i]',
-      'input[autocomplete="username"]',
       'input[placeholder*="username" i]',
       'input[placeholder*="email" i]',
       'input[placeholder*="user" i]'
     ];
-    
+
     for (const selector of selectors) {
-      const field = document.querySelector(selector);
-      if (field && field.offsetParent !== null) { // Check if visible
+      const field = root.querySelector(selector);
+      if (field && field.offsetParent !== null) {
         return field;
       }
     }
     return null;
   }
-  
+
   function findPasswordField() {
     const selectors = [
       'input[type="password"]',
@@ -102,14 +102,9 @@
       'input[autocomplete="current-password"]',
       'input[placeholder*="password" i]'
     ];
-    
-    for (const selector of selectors) {
-      const field = document.querySelector(selector);
-      if (field && field.offsetParent !== null) {
-        return field;
-      }
-    }
-    return null;
+
+    const candidates = Array.from(document.querySelectorAll(selectors.join(',')));
+    return candidates.find(field => field && field.offsetParent !== null) || null;
   }
   
   /**
@@ -144,9 +139,18 @@
    * Main fill function - preserves original behavior with enhancements
    */
   function fillCredentials(entry) {
-    const usernameField = findUsernameField();
     const passwordField = findPasswordField();
-    
+    let usernameField = null;
+
+    if (passwordField) {
+      const form = passwordField.closest('form') || document;
+      usernameField = findUsernameField(form);
+    }
+
+    if (!usernameField) {
+      usernameField = findUsernameField();
+    }
+
     if (!usernameField && !passwordField) {
       showNotification('No login fields found on this page', 'error');
       return { success: false, reason: 'fields_not_found' };
@@ -222,6 +226,19 @@
   
   // Log that content script is active
   console.log('[AuraSafe] Content script active and ready for auto-fill');
+
+  window.addEventListener('message', (event) => {
+    if (event.source !== window || !event.data || event.data.source !== 'AuraSafePage') {
+      return;
+    }
+
+    const requestId = event.data.requestId || null;
+    const payload = event.data.payload;
+
+    chrome.runtime.sendMessage({ type: 'bridge:proxy', payload }, (response) => {
+      window.postMessage({ source: 'AuraSafeExtension', requestId, response }, '*');
+    });
+  });
   
   // Optional: Add keyboard shortcut listener (Ctrl+Shift+A to fill last used)
   window.addEventListener('keydown', (e) => {

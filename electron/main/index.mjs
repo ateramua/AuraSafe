@@ -1,7 +1,9 @@
 import { app, BrowserWindow, ipcMain, protocol } from 'electron';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import net from 'net';
 import express from 'express';
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
@@ -28,6 +30,35 @@ import {
 import { isBiometricAvailable } from '../crypto/biometric-manager.mjs';
 import { pushToIPFS, pullFromIPFS, getCurrentCID } from '../sync/sync-engine.mjs';
 
+// ========================
+// 🔐 SINGLE INSTANCE LOCK (ENHANCED FIX)
+// ========================
+const gotLock = app.requestSingleInstanceLock();
+
+if (!gotLock) {
+  console.log('🚫 Blocked duplicate launch');
+  app.exit(0);
+  process.exit(0);
+}
+
+// Prevent macOS re-triggering open events
+app.on('open-url', (event) => {
+  event.preventDefault();
+  console.log('🚫 Blocked open-url relaunch');
+});
+
+// Handle second instance (when user tries to launch another instance)
+app.on('second-instance', () => {
+  console.log('⚠️ Second instance detected — focusing existing window');
+  
+  const wins = BrowserWindow.getAllWindows();
+  if (wins.length > 0) {
+    const win = wins[0];
+    if (win.isMinimized()) win.restore();
+    win.focus();
+  }
+});
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ✅ FIXED: Correct preload resolution for both dev and production
@@ -41,11 +72,24 @@ const isDev = process.env.NODE_ENV === 'development';
 
 let mainWindow;
 let server;
+let bridgeServer;
+let bridgeApp;
+let bridgePort = null;
+let bridgeInfoPath = null;
 let db;
 let wsServer;
+let pendingAutofillRequest = null;
 let EXTENSION_SECRET;
 let backupManager = null;
 let tempBackupManager = null;
+const BRIDGE_PORT_RANGE_START = 36000;
+const BRIDGE_PORT_RANGE_END = 36020;
+const BRIDGE_DISCOVERY_FILENAME = 'aurasafe-bridge.json';
+const ALLOWED_EXTENSION_ORIGINS = [/^chrome-extension:\/\//i, /^moz-extension:\/\//i, /^edge-extension:\/\//i];
+const BRIDGE_SESSION_TOKENS = new Map();
+const BRIDGE_RATE_LIMITS = new Map();
+const BRIDGE_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const BRIDGE_RATE_LIMIT_MAX_REQUESTS = 120;
 
 // ========== Database helpers ==========
 function getDatabasePath() {
@@ -235,9 +279,378 @@ EXTENSION_SECRET = tokenStore.get('token');
 if (!EXTENSION_SECRET) {
   EXTENSION_SECRET = randomBytes(32).toString('hex');
   tokenStore.set('token', EXTENSION_SECRET);
-  console.log('🔑 Generated extension token:', EXTENSION_SECRET);
+  console.log('🔑 Generated bridge secret:', EXTENSION_SECRET);
 } else {
-  console.log('🔑 Using existing extension token:', EXTENSION_SECRET);
+  console.log('🔑 Using existing bridge secret:', EXTENSION_SECRET);
+}
+
+// ========== Local bridge helpers ==========
+function getBridgeInfoFilePath() {
+  if (!bridgeInfoPath) {
+    if (process.platform === 'win32') {
+      bridgeInfoPath = path.join(process.env.TEMP || os.tmpdir(), BRIDGE_DISCOVERY_FILENAME);
+    } else {
+      bridgeInfoPath = path.join('/tmp', BRIDGE_DISCOVERY_FILENAME);
+    }
+  }
+  return bridgeInfoPath;
+}
+
+function rateLimit(req, res, next) {
+  const remoteAddress = req.socket?.remoteAddress || 'unknown';
+  const now = Date.now();
+  const record = BRIDGE_RATE_LIMITS.get(remoteAddress) || { count: 0, windowStart: now };
+
+  if (now - record.windowStart > BRIDGE_RATE_LIMIT_WINDOW_MS) {
+    record.count = 0;
+    record.windowStart = now;
+  }
+
+  record.count += 1;
+  BRIDGE_RATE_LIMITS.set(remoteAddress, record);
+
+  if (record.count > BRIDGE_RATE_LIMIT_MAX_REQUESTS) {
+    return sendBridgeError(res, 429, 'Rate limit exceeded');
+  }
+
+  next();
+}
+
+function isLoopbackAddress(address) {
+  if (!address) return false;
+  const normalized = address.replace(/^::ffff:/, '');
+  return normalized === '127.0.0.1' || normalized === '::1' || normalized === '::ffff:127.0.0.1';
+}
+
+function sanitizeLogBody(body) {
+  if (!body || typeof body !== 'object') return body;
+  const sanitized = { ...body };
+  if ('password' in sanitized) sanitized.password = '[REDACTED]';
+  if ('token' in sanitized) sanitized.token = '[REDACTED]';
+  if (sanitized.entry && typeof sanitized.entry === 'object') {
+    sanitized.entry = { ...sanitized.entry, password: sanitized.entry.password ? '[REDACTED]' : undefined };
+  }
+  return sanitized;
+}
+
+function sendBridgeError(res, status, message, details = null) {
+  res.status(status).json({ status: 'error', message, details });
+}
+
+async function getAvailableLocalPort(start, end) {
+  for (let port = start; port <= end; port++) {
+    const available = await new Promise((resolve) => {
+      const tester = net.createServer();
+      tester.once('error', () => {
+        resolve(false);
+      });
+      tester.once('listening', () => {
+        tester.close(() => resolve(true));
+      });
+      tester.listen(port, '127.0.0.1');
+    });
+
+    if (available) {
+      return port;
+    }
+  }
+  throw new Error(`No available local port found in range ${start}-${end}`);
+}
+
+function writeBridgeInfoFile() {
+  try {
+    const filePath = getBridgeInfoFilePath();
+    const data = {
+      port: bridgePort,
+      token: EXTENSION_SECRET,
+      createdAt: new Date().toISOString(),
+      description: 'AuraSafe local extension bridge info',
+      originAllowlist: ['chrome-extension://', 'moz-extension://', 'edge-extension://'],
+      platform: process.platform,
+      path: filePath,
+    };
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), { mode: 0o600 });
+    console.log('📄 Bridge discovery file written:', filePath);
+  } catch (error) {
+    console.error('❌ Failed to write bridge discovery file:', error);
+  }
+}
+
+function removeBridgeInfoFile() {
+  try {
+    const filePath = getBridgeInfoFilePath();
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log('🧹 Removed stale bridge discovery file:', filePath);
+    }
+  } catch (error) {
+    console.warn('⚠️ Could not remove bridge discovery file:', error.message);
+  }
+}
+
+function validateExtensionOrigin(origin) {
+  return !!origin && ALLOWED_EXTENSION_ORIGINS.some((pattern) => pattern.test(origin));
+}
+
+function createBridgeRequestLogger(req, res, next) {
+  const remoteAddress = req.socket?.remoteAddress || 'unknown';
+  const safeBody = sanitizeLogBody(req.body);
+  console.log(`🔌 [Bridge] ${req.method} ${req.url} from ${remoteAddress}`, safeBody);
+  next();
+}
+
+function getSessionTokenFromHeader(req) {
+  const authHeader = req.headers.authorization || '';
+  if (authHeader.toLowerCase().startsWith('bearer ')) {
+    return authHeader.slice(7).trim();
+  }
+  return req.headers['x-aura-safe-token'] || null;
+}
+
+function validateBridgeSession(req, res, next) {
+  const token = getSessionTokenFromHeader(req);
+  if (!token) {
+    return sendBridgeError(res, 401, 'Missing authentication token');
+  }
+
+  if (token === EXTENSION_SECRET) {
+    return next();
+  }
+
+  const session = BRIDGE_SESSION_TOKENS.get(token);
+  if (!session || session.expiresAt < Date.now()) {
+    return sendBridgeError(res, 401, 'Invalid or expired session token');
+  }
+
+  req.bridgeSession = session;
+  next();
+}
+
+async function createBridgeServer() {
+  try {
+    bridgePort = await getAvailableLocalPort(BRIDGE_PORT_RANGE_START, BRIDGE_PORT_RANGE_END);
+    bridgeApp = express();
+    bridgeApp.use(express.json({ limit: '512kb' }));
+    bridgeApp.use(createBridgeRequestLogger);
+    bridgeApp.use(rateLimit);
+
+    bridgeApp.use((req, res, next) => {
+      const origin = req.headers.origin;
+      if (origin && !validateExtensionOrigin(origin)) {
+        return sendBridgeError(res, 403, 'Origin not allowed');
+      }
+      if (origin) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+      } else {
+        res.setHeader('Access-Control-Allow-Origin', 'null');
+      }
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Aura-Safe-Token');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      if (req.method === 'OPTIONS') {
+        return res.sendStatus(204);
+      }
+      next();
+    });
+
+    bridgeApp.use((req, res, next) => {
+      const remoteAddress = req.socket.remoteAddress;
+      if (!isLoopbackAddress(remoteAddress)) {
+        return sendBridgeError(res, 403, 'Connection must come from loopback interface');
+      }
+      next();
+    });
+
+    bridgeApp.get('/bridge/public', (req, res) => {
+      res.json({ status: 'ok', app: 'AuraSafe', version: app.getVersion(), supportsHandshake: true });
+    });
+
+    bridgeApp.get('/bridge/info', (req, res) => {
+      const origin = req.headers.origin;
+      if (origin && !validateExtensionOrigin(origin)) {
+        return sendBridgeError(res, 403, 'Origin not allowed');
+      }
+      res.json({
+        status: 'ok',
+        app: 'AuraSafe',
+        version: app.getVersion(),
+        supportsHandshake: true,
+        originAllowlist: ['chrome-extension://', 'moz-extension://', 'edge-extension://'],
+      });
+    });
+
+    bridgeApp.get('/bridge/health', (req, res) => {
+      res.json({ status: 'ok', app: 'AuraSafe', version: app.getVersion(), uptime: process.uptime() });
+    });
+
+    bridgeApp.post('/bridge/handshake', (req, res) => {
+      const origin = req.headers.origin;
+      if (origin && !validateExtensionOrigin(origin)) {
+        return sendBridgeError(res, 403, 'Handshake origin not allowed');
+      }
+
+      const sessionToken = uuidv4();
+      const expiresAt = Date.now() + 5 * 60 * 1000;
+      BRIDGE_SESSION_TOKENS.set(sessionToken, {
+        id: sessionToken,
+        createdAt: Date.now(),
+        expiresAt,
+        origin: origin || null,
+      });
+
+      console.log('🔐 Created bridge session token for origin', origin);
+      res.json({ status: 'ok', sessionToken, expiresAt, version: app.getVersion() });
+    });
+
+    bridgeApp.post('/bridge/command', validateBridgeSession, async (req, res) => {
+      try {
+        const result = await handleBridgeCommand(req.body);
+        res.json({ status: 'ok', result });
+      } catch (error) {
+        console.error('❌ Bridge command failed:', error);
+        sendBridgeError(res, 500, 'Bridge command failed', error.message);
+      }
+    });
+
+    bridgeApp.use((err, req, res, next) => {
+      console.error('❌ Bridge internal error:', err);
+      sendBridgeError(res, 500, 'Internal bridge error', err.message);
+    });
+
+    bridgeServer = bridgeApp.listen(bridgePort, '127.0.0.1', () => {
+      console.log(`🔐 Local bridge server listening on http://127.0.0.1:${bridgePort}`);
+      writeBridgeInfoFile();
+    });
+  } catch (err) {
+    console.error('❌ Failed to create local bridge server:', err);
+    bridgePort = null;
+    bridgeServer = null;
+  }
+}
+
+async function handleBridgeCommand(body) {
+  if (!body || typeof body !== 'object') {
+    throw new Error('Missing command payload');
+  }
+
+  const action = body.action;
+  const currentUser = userService.getCurrentUser();
+  const db = await getDatabase();
+
+  switch (action) {
+    case 'getUserSettings': {
+      const rows = await db.all('SELECT key, value FROM user_settings WHERE user_id = ?', [currentUser.id]);
+      return rows;
+    }
+    case 'saveUserSetting': {
+      const { key, value } = body;
+      if (!key) throw new Error('Missing key');
+      await db.run(
+        'INSERT OR REPLACE INTO user_settings (user_id, key, value, updated_at) VALUES (?, ?, ?, datetime(\'now\'))',
+        [currentUser.id, key, value]
+      );
+      return { key, value };
+    }
+    case 'getTransactions': {
+      return await db.all('SELECT * FROM transactions WHERE user_id = ?', [currentUser.id]);
+    }
+    case 'saveTransaction': {
+      const transaction = body.transaction;
+      if (!transaction || !transaction.account_id || typeof transaction.amount !== 'number') {
+        throw new Error('Invalid transaction payload');
+      }
+      if (transaction.id) {
+        await db.run(
+          `UPDATE transactions SET account_id = ?, date = ?, description = ?, amount = ?, category_id = ?, payee = ?, memo = ?, is_cleared = ? WHERE id = ?`,
+          [
+            transaction.account_id,
+            transaction.date,
+            transaction.description,
+            transaction.amount,
+            transaction.category_id,
+            transaction.payee,
+            transaction.memo,
+            transaction.is_cleared ? 1 : 0,
+            transaction.id,
+          ]
+        );
+        return { updated: transaction.id };
+      }
+      const result = await db.run(
+        `INSERT INTO transactions (account_id, user_id, date, description, amount, category_id, payee, memo, is_cleared) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          transaction.account_id,
+          currentUser.id,
+          transaction.date,
+          transaction.description,
+          transaction.amount,
+          transaction.category_id,
+          transaction.payee,
+          transaction.memo,
+          transaction.is_cleared ? 1 : 0,
+        ]
+      );
+      return { insertedId: result.lastID };
+    }
+    case 'getCategories': {
+      return await db.all('SELECT * FROM categories WHERE user_id = ?', [currentUser.id]);
+    }
+    case 'getAccounts': {
+      return await db.all('SELECT * FROM accounts WHERE user_id = ?', [currentUser.id]);
+    }
+    case 'ping': {
+      return { status: 'ok', version: app.getVersion(), uptime: process.uptime() };
+    }
+    case 'getVaultEntries': {
+      if (!isUnlocked()) throw new Error('Vault locked');
+      return loadVaultEntries();
+    }
+    case 'saveVaultEntry': {
+      if (!isUnlocked()) throw new Error('Vault locked');
+      const entry = body.entry;
+      if (!entry || !entry.id) throw new Error('Invalid entry payload');
+      const entries = loadVaultEntries();
+      const index = entries.findIndex((e) => e.id === entry.id);
+      if (index !== -1) entries[index] = { ...entries[index], ...entry };
+      else entries.push(entry);
+      saveVaultEntries(entries);
+      if (await isAutoSyncEnabled()) {
+        try {
+          await pushToIPFS();
+        } catch (err) {
+          console.error('Auto-sync failed:', err);
+        }
+      }
+      return { saved: entry.id };
+    }
+    case 'queueAutofill': {
+      const { entry, url } = body;
+      if (!isUnlocked()) throw new Error('Vault locked');
+      if (!entry || !entry.id) throw new Error('Invalid autofill entry');
+      pendingAutofillRequest = {
+        entry,
+        url: typeof url === 'string' ? url : entry.url || '',
+        createdAt: Date.now(),
+      };
+      return { queued: true, entryId: entry.id };
+    }
+    case 'getPendingAutofill': {
+      if (!pendingAutofillRequest) return null;
+      const age = Date.now() - pendingAutofillRequest.createdAt;
+      if (age > 2 * 60 * 1000) {
+        pendingAutofillRequest = null;
+        return null;
+      }
+      return pendingAutofillRequest;
+    }
+    case 'consumePendingAutofill': {
+      const request = pendingAutofillRequest;
+      pendingAutofillRequest = null;
+      return request;
+    }
+    default:
+      throw new Error(`Unsupported bridge action: ${action}`);
+  }
 }
 
 // ========== User service (simplified) ==========
@@ -446,8 +859,9 @@ app.whenReady().then(async () => {
 
   try {
     await initDatabase();
+    await createBridgeServer();
   } catch (err) {
-    console.error('❌ Database init failed:', err);
+    console.error('❌ Startup failed:', err);
     app.quit();
     return;
   }
@@ -686,6 +1100,12 @@ app.whenReady().then(async () => {
     return newEntries;
   });
 
+  ipcMain.handle('autofill', async (event, data) => {
+    if (!isUnlocked()) throw new Error('Vault locked');
+    const response = await handleBridgeCommand({ action: 'queueAutofill', entry: data.entry, url: data.url });
+    return response;
+  });
+
   ipcMain.handle('sync:push', async () => {
     try { return { success: true, cid: await pushToIPFS() }; }
     catch (err) { return { success: false, error: err.message }; }
@@ -785,5 +1205,12 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   if (server) server.close();
   if (wsServer) wsServer.close();
+  if (bridgeServer) {
+    bridgeServer.close(() => {
+      removeBridgeInfoFile();
+    });
+  } else {
+    removeBridgeInfoFile();
+  }
   if (db && typeof db.close === 'function') db.close();
 });
