@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, protocol } from 'electron';
+import { app, BrowserWindow, ipcMain, protocol, dialog } from 'electron';
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
@@ -10,7 +10,7 @@ import sqlite3 from 'sqlite3';
 import Store from 'electron-store';
 import { v4 as uuidv4 } from 'uuid';
 import { WebSocketServer } from 'ws';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 import BackupManager from '../backup/backup-manager.mjs';
 
 // Import your custom modules
@@ -29,6 +29,7 @@ import {
 } from '../crypto/key-manager.mjs';
 import { isBiometricAvailable } from '../crypto/biometric-manager.mjs';
 import { pushToIPFS, pullFromIPFS, getCurrentCID } from '../sync/sync-engine.mjs';
+import { vaultBackupManager } from '../services/vault-backup.mjs';
 
 // ========================
 // 🔐 SINGLE INSTANCE LOCK (ENHANCED FIX)
@@ -888,8 +889,6 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('backup:import-file-pre-vault', async () => {
     console.log('[Backup] import-file-pre-vault called');
-    const { dialog } = require('electron');
-    const fs = require('fs');
 
     const result = await dialog.showOpenDialog({
       title: 'Import Vault Backup',
@@ -929,9 +928,6 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('backup:icloud-restore-pre-vault', async () => {
     console.log('[Backup] icloud-restore-pre-vault called');
-    const fs = require('fs');
-    const path = require('path');
-    const os = require('os');
 
     const iCloudBackupDir = path.join(
       os.homedir(),
@@ -970,13 +966,13 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle('backup:export', async (event, vaultData) => {
-    const { dialog } = require('electron');
-    const fs = require('fs');
-    const crypto = require('crypto');
+    if (!isUnlocked()) {
+      return { success: false, error: 'Vault must be unlocked to export backup' };
+    }
 
     const result = await dialog.showSaveDialog({
       title: 'Export Vault Backup',
-      defaultPath: `AuraSafe_Backup_${Date.now()}.aura`,
+      defaultPath: `AuraSafe_Backup_${new Date().toISOString().split('T')[0]}.aura`,
       filters: [
         { name: 'AuraSafe Backup', extensions: ['aura'] },
         { name: 'All Files', extensions: ['*'] }
@@ -997,9 +993,9 @@ app.whenReady().then(async () => {
         checksum: null
       };
 
+      // Calculate checksum for integrity verification
       const backupString = JSON.stringify(backupContainer.data);
-      backupContainer.checksum = crypto
-        .createHash('sha256')
+      backupContainer.checksum = createHash('sha256')
         .update(backupString)
         .digest('hex');
 
@@ -1013,10 +1009,6 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle('backup:find-local', async () => {
-    const fs = require('fs');
-    const path = require('path');
-    const os = require('os');
-
     const documentsPath = path.join(os.homedir(), 'Documents');
     const backupsDir = path.join(documentsPath, 'AuraSafe Backups');
 
@@ -1038,23 +1030,198 @@ app.whenReady().then(async () => {
 
   // Placeholder for other backup methods
   ipcMain.handle('backup:import', async () => {
-    return { success: false, error: 'Use import-file-pre-vault for pre-vault import' };
+    if (!isUnlocked()) {
+      return { success: false, error: 'Vault must be unlocked to import backup' };
+    }
+
+    const result = await dialog.showOpenDialog({
+      title: 'Import Vault Backup',
+      filters: [
+        { name: 'AuraSafe Backup', extensions: ['aura'] },
+        { name: 'All Files', extensions: ['*'] }
+      ],
+      properties: ['openFile']
+    });
+
+    if (result.canceled || !result.filePaths.length) {
+      return { success: false, cancelled: true };
+    }
+
+    const filePath = result.filePaths[0];
+
+    try {
+      const fileContent = fs.readFileSync(filePath, 'utf-8');
+      const backupContainer = JSON.parse(fileContent);
+
+      // Verify version compatibility
+      if (backupContainer.version !== '1.0') {
+        throw new Error(`Incompatible backup version: ${backupContainer.version}`);
+      }
+
+      // Verify checksum if present
+      if (backupContainer.checksum) {
+        const backupString = JSON.stringify(backupContainer.data);
+        const calculatedChecksum = createHash('sha256')
+          .update(backupString)
+          .digest('hex');
+
+        if (calculatedChecksum !== backupContainer.checksum) {
+          throw new Error('Backup file corrupted or tampered with');
+        }
+      }
+
+      // Import the vault data
+      const { importVaultData } = await import('./crypto/key-manager.mjs');
+      importVaultData(backupContainer.data);
+
+      return { 
+        success: true, 
+        data: backupContainer.data,
+        timestamp: backupContainer.timestamp
+      };
+    } catch (error) {
+      console.error('[Backup] Import failed:', error);
+      return { success: false, error: error.message };
+    }
   });
 
   ipcMain.handle('backup:icloud:available', async () => {
-    const fs = require('fs');
-    const path = require('path');
-    const os = require('os');
     const iCloudPath = path.join(os.homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs');
     return fs.existsSync(iCloudPath);
   });
 
   ipcMain.handle('backup:icloud:backup', async (event, vaultData) => {
-    return { success: false, error: 'iCloud backup not configured yet' };
+    if (!isUnlocked()) {
+      return { success: false, error: 'Vault must be unlocked to backup to iCloud' };
+    }
+
+    const iCloudPath = path.join(os.homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs');
+    if (!fs.existsSync(iCloudPath)) {
+      return { success: false, error: 'iCloud Drive not available. Please enable iCloud Drive in System Settings.' };
+    }
+
+    const iCloudBackupDir = path.join(iCloudPath, 'AuraSafe Backups');
+
+    // Create backup directory in iCloud
+    if (!fs.existsSync(iCloudBackupDir)) {
+      fs.mkdirSync(iCloudBackupDir, { recursive: true });
+    }
+
+    const backupFileName = `AuraSafe_Cloud_${new Date().toISOString().split('T')[0]}.aura`;
+    const backupPath = path.join(iCloudBackupDir, backupFileName);
+
+    try {
+      const backupContainer = {
+        version: '1.0',
+        timestamp: Date.now(),
+        deviceName: os.hostname(),
+        data: vaultData,
+        checksum: null
+      };
+
+      // Calculate checksum for integrity verification
+      const backupString = JSON.stringify(backupContainer.data);
+      backupContainer.checksum = createHash('sha256')
+        .update(backupString)
+        .digest('hex');
+
+      fs.writeFileSync(backupPath, JSON.stringify(backupContainer, null, 2));
+
+      // Keep only last 10 backups
+      const files = fs.readdirSync(iCloudBackupDir)
+        .filter(f => f.endsWith('.aura'))
+        .map(f => ({
+          name: f,
+          path: path.join(iCloudBackupDir, f),
+          mtime: fs.statSync(path.join(iCloudBackupDir, f)).mtime
+        }))
+        .sort((a, b) => b.mtime - a.mtime);
+
+      // Delete excess files
+      for (let i = 10; i < files.length; i++) {
+        fs.unlinkSync(files[i].path);
+        console.log(`[Backup] Removed old iCloud backup: ${files[i].name}`);
+      }
+
+      return {
+        success: true,
+        path: backupPath,
+        message: 'Backup saved to iCloud Drive'
+      };
+    } catch (error) {
+      console.error('[Backup] iCloud backup failed:', error);
+      return { success: false, error: error.message };
+    }
   });
 
   ipcMain.handle('backup:icloud:restore', async () => {
-    return { success: false, error: 'iCloud restore not configured yet' };
+    if (!isUnlocked()) {
+      return { success: false, error: 'Vault must be unlocked to restore from iCloud' };
+    }
+
+    const iCloudPath = path.join(os.homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs');
+    if (!fs.existsSync(iCloudPath)) {
+      return { success: false, error: 'iCloud Drive not available' };
+    }
+
+    const iCloudBackupDir = path.join(iCloudPath, 'AuraSafe Backups');
+
+    if (!fs.existsSync(iCloudBackupDir)) {
+      return { success: false, error: 'No iCloud backups found' };
+    }
+
+    // Get all backup files
+    const backupFiles = fs.readdirSync(iCloudBackupDir)
+      .filter(f => f.endsWith('.aura'))
+      .map(f => ({
+        path: path.join(iCloudBackupDir, f),
+        name: f,
+        modified: fs.statSync(path.join(iCloudBackupDir, f)).mtime
+      }))
+      .sort((a, b) => b.modified - a.modified);
+
+    if (backupFiles.length === 0) {
+      return { success: false, error: 'No backup files found in iCloud' };
+    }
+
+    // Use the latest backup
+    const latestBackup = backupFiles[0];
+
+    try {
+      const fileContent = fs.readFileSync(latestBackup.path, 'utf-8');
+      const backupContainer = JSON.parse(fileContent);
+
+      // Verify version compatibility
+      if (backupContainer.version !== '1.0') {
+        throw new Error(`Incompatible backup version: ${backupContainer.version}`);
+      }
+
+      // Verify checksum if present
+      if (backupContainer.checksum) {
+        const backupString = JSON.stringify(backupContainer.data);
+        const calculatedChecksum = createHash('sha256')
+          .update(backupString)
+          .digest('hex');
+
+        if (calculatedChecksum !== backupContainer.checksum) {
+          throw new Error('Backup file corrupted or tampered with');
+        }
+      }
+
+      // Import the vault data
+      const { importVaultData } = await import('./crypto/key-manager.mjs');
+      importVaultData(backupContainer.data);
+
+      return {
+        success: true,
+        data: backupContainer.data,
+        timestamp: backupContainer.timestamp,
+        backupDate: new Date(backupContainer.timestamp).toLocaleString()
+      };
+    } catch (error) {
+      console.error('[Backup] iCloud restore failed:', error);
+      return { success: false, error: error.message };
+    }
   });
   ipcMain.handle('vault:init', async (event, masterPassword) => {
     try {
@@ -1142,6 +1309,35 @@ app.whenReady().then(async () => {
     const db = await getDatabase();
     await db.run(`INSERT OR REPLACE INTO user_settings (user_id, key, value, updated_at) VALUES (?, ?, ?, datetime('now'))`, [currentUser.id, key, value]);
     return { success: true };
+  });
+
+  // Vault backup operations
+  ipcMain.handle('vault-backup:export', async (event, password, options) => {
+    try {
+      return await vaultBackupManager.exportVault(password, options);
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('vault-backup:import', async (event, password, options) => {
+    try {
+      return await vaultBackupManager.importVault(password, options);
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('vault-backup:preview', async (event, password) => {
+    try {
+      return await vaultBackupManager.previewVault(password);
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('vault-backup:status', (event, operationId) => {
+    return vaultBackupManager.getOperationStatus(operationId);
   });
 
   ipcMain.handle('ping', () => 'pong from main process');

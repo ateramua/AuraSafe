@@ -68,6 +68,14 @@ try {
       iCloudRestore: () => ipcRenderer.invoke('backup:icloud:restore'),
       findLocal: () => ipcRenderer.invoke('backup:find-local'),
     },
+
+    // Vault export/import operations
+    vaultBackup: {
+      export: (password, options) => ipcRenderer.invoke('vault-backup:export', password, options),
+      import: (password, options) => ipcRenderer.invoke('vault-backup:import', password, options),
+      preview: (password) => ipcRenderer.invoke('vault-backup:preview', password),
+      getStatus: (operationId) => ipcRenderer.invoke('vault-backup:status', operationId),
+    },
   };
 
   contextBridge.exposeInMainWorld('api', api);

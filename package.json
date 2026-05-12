@@ -64,7 +64,9 @@
       {
         "from": "out",
         "to": "out",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "electron/preload/",

@@ -16,6 +16,7 @@ export default function Vault() {
   const [syncMessage, setSyncMessage] = useState('');
   const [syncLoading, setSyncLoading] = useState(false);
   const [unlockError, setUnlockError] = useState(null);
+  const [pendingRestoreData, setPendingRestoreData] = useState(null);
 
   // Modal state
   const [modalCategory, setModalCategory] = useState(null);
@@ -46,6 +47,21 @@ export default function Vault() {
       try {
         const isInit = await api.isInitialized();
         setInitialized(isInit);
+
+        // Check for pending restore data
+        const pendingRestore = typeof window !== 'undefined' ? sessionStorage.getItem('pendingRestore') : null;
+        if (pendingRestore) {
+          try {
+            const backupData = JSON.parse(pendingRestore);
+            // Extract the actual vault data from the backup container
+            const vaultData = backupData.data || backupData;
+            setPendingRestoreData(vaultData);
+            sessionStorage.removeItem('pendingRestore'); // Clear it
+          } catch (err) {
+            console.error('Failed to parse pending restore data:', err);
+            sessionStorage.removeItem('pendingRestore'); // Clear invalid data
+          }
+        }
 
         if (isInit) {
           const isUnlocked = await api.isUnlocked();
@@ -83,8 +99,25 @@ export default function Vault() {
       await api.initVault(masterPassword);
       setInitialized(true);
       setUnlocked(true);
+      
+      // If we have pending restore data, import the entries
+      if (pendingRestoreData && pendingRestoreData.entries) {
+        const entries = pendingRestoreData.entries;
+        for (const entry of entries) {
+          try {
+            await api.saveVaultEntry(entry);
+          } catch (err) {
+            console.error('Failed to save restored entry:', err);
+          }
+        }
+        setEntriesSafe(entries);
+        setPendingRestoreData(null);
+      } else {
+        // Create empty vault
+        setEntries([]);
+      }
+      
       setMasterPassword('');
-      loadEntries();
     } catch (err) {
       handleError('Initialization failed', err);
     } finally {
@@ -182,9 +215,16 @@ export default function Vault() {
   if (error) return <div style={styles.container}>Error: {error}</div>;
 
   if (!initialized) {
+    const isRestore = pendingRestoreData && pendingRestoreData.entries;
     return (
       <div style={styles.container}>
-        <h2>Initialize Vault</h2>
+        <h2>{isRestore ? 'Restore Vault from Backup' : 'Initialize Vault'}</h2>
+        {isRestore && (
+          <div style={styles.restoreInfo}>
+            <p>Found backup data with {pendingRestoreData.entries.length} entries.</p>
+            <p>Enter a master password to restore your vault.</p>
+          </div>
+        )}
         <form onSubmit={handleInit}>
           <input
             type="password"
@@ -193,7 +233,9 @@ export default function Vault() {
             placeholder="Master password"
             style={styles.input}
           />
-          <button style={styles.button}>Create Vault</button>
+          <button style={styles.button}>
+            {isRestore ? 'Restore Vault' : 'Create Vault'}
+          </button>
         </form>
       </div>
     );
@@ -354,6 +396,14 @@ const styles = {
     borderRadius: '1rem',
     backdropFilter: 'blur(4px)',
     marginTop: '2rem',
+  },
+  restoreInfo: {
+    background: 'rgba(59, 130, 246, 0.1)',
+    border: '1px solid #3B82F6',
+    borderRadius: '0.5rem',
+    padding: '1rem',
+    marginBottom: '1rem',
+    color: '#c8e6c9',
   },
   container: {
     padding: '2rem',

@@ -16,6 +16,7 @@ import {
 } from '../lib/api-client';
 import { loadVault } from '../lib/store';
 import BackupSettings from '../components/BackupSettings';
+import VaultBackupModal from '../components/VaultBackupModal';
 
 // Safe link that uses Next.js router if available, otherwise falls back to full page load
 function SafeLink({ href, children, className }) {
@@ -54,6 +55,7 @@ export default function SettingsPage() {
   // Derived metrics for the dashboard
   const [securityScore, setSecurityScore] = useState(0);
   const [strongPasswords, setStrongPasswords] = useState(0);
+  const [showBackupModal, setShowBackupModal] = useState(false);
 
   // 🛠️ FIX: Move testBackup INSIDE the component
   const testBackup = async () => {
@@ -87,7 +89,7 @@ export default function SettingsPage() {
     } else if (vaultData && typeof vaultData === 'object' && Array.isArray(vaultData.entries)) {
       entriesArray = vaultData.entries;
     }
-    return { entries: entriesArray, lastModified: Date.now() };
+    return { entries: entriesArray, _meta: { lastModified: Date.now(), version: '1.0' } };
   };
 
   useEffect(() => {
@@ -110,7 +112,7 @@ export default function SettingsPage() {
           entriesArray = vaultData.entries;
         }
         setEntries(entriesArray);
-        setVaultDataForBackup({ entries: entriesArray, lastModified: Date.now() });
+        setVaultDataForBackup({ entries: entriesArray, _meta: { lastModified: Date.now(), version: '1.0' } });
       }
 
       try {
@@ -152,7 +154,7 @@ export default function SettingsPage() {
   const handleRestoreComplete = async (restoredData) => {
     if (restoredData && restoredData.entries) {
       setEntries(restoredData.entries);
-      setVaultDataForBackup({ entries: restoredData.entries, lastModified: Date.now() });
+      setVaultDataForBackup({ entries: restoredData.entries, _meta: { lastModified: Date.now(), version: '1.0' } });
       setSyncMessage('✅ Vault restored successfully! Refreshing...');
       setTimeout(() => {
         window.location.reload();
@@ -332,6 +334,21 @@ export default function SettingsPage() {
     } finally {
       setSyncLoading(false);
     }
+  };
+
+  const handleOpenBackupManager = () => {
+    if (typeof window === 'undefined') {
+      console.warn('Backup Manager cannot open during SSR');
+      return;
+    }
+
+    if (!window.api?.vaultBackup && !window.api?.backup) {
+      console.warn('Backup APIs are not available on window.api');
+      alert('Backup Manager is unavailable right now. Please restart the app or check your environment.');
+      return;
+    }
+
+    setShowBackupModal(true);
   };
 
   return (
@@ -696,6 +713,28 @@ export default function SettingsPage() {
             onRestoreComplete={handleRestoreComplete}
           />
 
+          {/* Vault Export/Import */}
+          <div className="setting-section">
+            <div className="setting-header">
+              <span className="setting-icon">💾</span>
+              <h3>Vault Export/Import</h3>
+            </div>
+            <p className="setting-description">
+              Export your vault to an encrypted backup file or import from a previous backup.
+            </p>
+            <button
+              type="button"
+              onClick={handleOpenBackupManager}
+              className="sync-button"
+              style={{
+                background: 'linear-gradient(135deg, #2e7d32, #1b5e20)',
+                marginTop: '1rem'
+              }}
+            >
+              📂 Open Backup Manager
+            </button>
+          </div>
+
           <hr className="settings-divider" />
 
           {/* Biometric Section */}
@@ -787,6 +826,12 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {/* Vault Backup Modal */}
+      <VaultBackupModal
+        isOpen={showBackupModal}
+        onClose={() => setShowBackupModal(false)}
+      />
     </>
   );
 }
