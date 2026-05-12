@@ -56,6 +56,7 @@ export default function SettingsPage() {
   const [securityScore, setSecurityScore] = useState(0);
   const [strongPasswords, setStrongPasswords] = useState(0);
   const [showBackupModal, setShowBackupModal] = useState(false);
+  const api = typeof window !== 'undefined' ? window.api : null;
 
   // 🛠️ FIX: Move testBackup INSIDE the component
   const testBackup = async () => {
@@ -337,14 +338,15 @@ export default function SettingsPage() {
   };
 
   const handleOpenBackupManager = () => {
-    if (typeof window === 'undefined') {
-      console.warn('Backup Manager cannot open during SSR');
+    if (!api) {
+      console.warn('Backup Manager cannot open outside the browser context');
+      alert('Backup Manager is unavailable outside the desktop app.');
       return;
     }
 
-    if (!window.api?.vaultBackup && !window.api?.backup) {
-      console.warn('Backup APIs are not available on window.api');
-      alert('Backup Manager is unavailable right now. Please restart the app or check your environment.');
+    if (!api.vaultBackup) {
+      console.warn('Vault backup API is not available on window.api');
+      alert('Vault Backup Manager is unavailable right now. Please restart the app or check your environment.');
       return;
     }
 
@@ -363,14 +365,17 @@ export default function SettingsPage() {
           background: linear-gradient(135deg, #0a2a0a 0%, #0f3a0f 100%);
           display: flex;
           justify-content: center;
-          align-items: center;
+          align-items: flex-start;
           padding: 2rem;
           font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+          overflow-y: auto;
         }
 
         .settings-card {
           max-width: 1100px;
           width: 100%;
+          max-height: calc(100vh - 4rem);
+          overflow-y: auto;
           background: rgba(20, 40, 20, 0.7);
           backdrop-filter: blur(12px);
           border-radius: 2rem;
@@ -708,7 +713,7 @@ export default function SettingsPage() {
 
           {/* Backup Section - Layer 2 & 3 */}
           <BackupSettings
-            api={window.api}
+            api={api}
             vaultData={vaultDataForBackup}
             onRestoreComplete={handleRestoreComplete}
           />
