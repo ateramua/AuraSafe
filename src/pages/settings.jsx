@@ -17,6 +17,7 @@ import {
 import { loadVault } from '../lib/store';
 import BackupSettings from '../components/BackupSettings';
 import VaultBackupModal from '../components/VaultBackupModal';
+import PasswordGenerator from '../components/PasswordGenerator';
 
 // Safe link that uses Next.js router if available, otherwise falls back to full page load
 function SafeLink({ href, children, className }) {
@@ -56,6 +57,8 @@ export default function SettingsPage() {
   const [securityScore, setSecurityScore] = useState(0);
   const [strongPasswords, setStrongPasswords] = useState(0);
   const [showBackupModal, setShowBackupModal] = useState(false);
+  const [showGenerator, setShowGenerator] = useState(false);
+  const [generatorStatus, setGeneratorStatus] = useState('');
   const api = typeof window !== 'undefined' ? window.api : null;
 
   // 🛠️ FIX: Move testBackup INSIDE the component
@@ -353,6 +356,21 @@ export default function SettingsPage() {
     setShowBackupModal(true);
   };
 
+  const handleOpenPasswordGenerator = () => {
+    setGeneratorStatus('');
+    setShowGenerator(true);
+  };
+
+  const handleUseGeneratedPassword = async (password) => {
+    try {
+      await navigator.clipboard.writeText(password);
+      setGeneratorStatus('Password copied to clipboard.');
+    } catch (err) {
+      console.warn('Clipboard copy failed:', err);
+      setGeneratorStatus('Generated password is ready. Paste it where needed.');
+    }
+  };
+
   return (
     <>
       <style jsx>{`
@@ -531,6 +549,40 @@ export default function SettingsPage() {
           background: rgba(76, 175, 80, 0.2);
           padding: 0.2rem 0.6rem;
           border-radius: 1rem;
+        }
+
+        .generator-card {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 1rem;
+          padding: 1rem 1.25rem;
+          border-radius: 1rem;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(66, 153, 225, 0.18);
+        }
+
+        .generator-preview {
+          flex: 1 1 320px;
+          display: flex;
+          flex-direction: column;
+          gap: 0.35rem;
+          color: #d1d5db;
+        }
+
+        .generator-note {
+          font-size: 0.9rem;
+          color: #cbd5e1;
+        }
+
+        .generator-status {
+          margin-top: 0.5rem;
+          font-size: 0.9rem;
+          color: #a5d6a5;
+          background: rgba(66, 153, 225, 0.12);
+          border-radius: 0.85rem;
+          padding: 0.6rem 0.9rem;
         }
 
         .toggle-switch {
@@ -786,6 +838,33 @@ export default function SettingsPage() {
 
           <hr className="settings-divider" />
 
+          <div className="setting-section">
+            <div className="setting-header">
+              <span className="setting-icon">🧩</span>
+              <h3>Password Generator</h3>
+            </div>
+            <p className="setting-description">
+              Generate strong credentials with configurable length, character sets, ambiguous character filtering, and a pronounceable mode.
+            </p>
+            <div className="generator-card">
+              <div className="generator-preview">
+                <div><strong>Last generated password:</strong></div>
+                <div className="generator-note">Use the generator to produce a password and copy it to your clipboard.</div>
+                {generatorStatus && <div className="generator-status">{generatorStatus}</div>}
+              </div>
+              <button
+                type="button"
+                onClick={handleOpenPasswordGenerator}
+                className="sync-button"
+                style={{ background: 'linear-gradient(135deg, #2563EB, #1D4ED8)' }}
+              >
+                🔐 Open Password Generator
+              </button>
+            </div>
+          </div>
+
+          <hr className="settings-divider" />
+
           {/* IPFS Sync Section */}
           <div className="setting-section">
             <div className="setting-header">
@@ -831,6 +910,13 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {/* Password Generator Modal */}
+      <PasswordGenerator
+        isOpen={showGenerator}
+        onClose={() => setShowGenerator(false)}
+        onUsePassword={handleUseGeneratedPassword}
+      />
 
       {/* Vault Backup Modal */}
       <VaultBackupModal

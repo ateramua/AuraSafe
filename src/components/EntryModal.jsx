@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import PasswordGenerator from './PasswordGenerator';
 
 const categoryToType = {
   passwords: 'credential',
@@ -105,12 +106,18 @@ const getFieldConfig = (category) => {
 export default function EntryModal({ isOpen, entry, category, onClose, onSave, zIndex = 1200 }) {
   const [form, setForm] = useState(getInitialState(entry || {}));
   const [saving, setSaving] = useState(false);
+  const [showGenerator, setShowGenerator] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setForm(getInitialState(entry || {}));
     }
   }, [isOpen, entry]);
+
+  const handleUseGeneratedPassword = (password) => {
+    setForm((prev) => ({ ...prev, password }));
+    setShowGenerator(false);
+  };
 
   if (!isOpen) return null;
 
@@ -155,6 +162,22 @@ export default function EntryModal({ isOpen, entry, category, onClose, onSave, z
                   value={form[field.name] || ''}
                   onChange={(e) => handleChange(field.name, e.target.value)}
                 />
+              ) : field.name === 'password' ? (
+                <div style={styles.passwordFieldRow}>
+                  <input
+                    style={styles.input}
+                    type={field.type || 'password'}
+                    value={form[field.name] || ''}
+                    onChange={(e) => handleChange(field.name, e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    style={styles.generateButton}
+                    onClick={() => setShowGenerator(true)}
+                  >
+                    Generate
+                  </button>
+                </div>
               ) : (
                 <input
                   style={styles.input}
@@ -175,6 +198,12 @@ export default function EntryModal({ isOpen, entry, category, onClose, onSave, z
           </div>
         </div>
       </div>
+      <PasswordGenerator
+        isOpen={showGenerator}
+        onClose={() => setShowGenerator(false)}
+        onUsePassword={handleUseGeneratedPassword}
+        zIndex={1300}
+      />
     </div>
   );
 }
@@ -231,6 +260,22 @@ const styles = {
   fieldRow: {
     display: 'grid',
     gap: '0.5rem',
+  },
+  passwordFieldRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.75rem',
+    flexWrap: 'wrap',
+  },
+  generateButton: {
+    alignSelf: 'flex-start',
+    padding: '0.7rem 1rem',
+    background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+    border: 'none',
+    borderRadius: '0.75rem',
+    color: '#f8fafc',
+    fontWeight: 700,
+    cursor: 'pointer',
   },
   label: {
     fontSize: '0.85rem',
