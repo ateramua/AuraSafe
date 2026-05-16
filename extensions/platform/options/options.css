@@ -1,0 +1,69 @@
+@import "../shared/theme/tokens.css";
+
+body {
+  background: var(--as-bg);
+  color: var(--as-text);
+  font-family: var(--as-font);
+  margin: 0;
+}
+
+.settings {
+  max-width: 760px;
+  padding: 40px;
+}
+
+.eyebrow {
+  color: var(--as-text-muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h1 {
+  font-size: 32px;
+  letter-spacing: -0.04em;
+  margin: 0 0 24px;
+}
+
+.card {
+  background: var(--as-surface);
+  border: 1px solid var(--as-border);
+  border-radius: var(--as-radius-lg);
+  margin: 16px 0;
+  padding: 20px;
+}
+
+button {
+  background: var(--as-accent);
+  border: 0;
+  border-radius: 12px;
+  color: var(--as-accent-contrast);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  margin-top: 12px;
+  padding: 10px 14px;
+}
+
+button.secondary {
+  background: var(--as-surface-muted);
+  color: var(--as-text);
+}
+
+.diagnostics {
+  display: grid;
+  gap: 8px 18px;
+  grid-template-columns: max-content 1fr;
+  margin: 14px 0 0;
+}
+
+.diagnostics dt {
+  color: var(--as-text-muted);
+  font-weight: 800;
+}
+
+.diagnostics dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

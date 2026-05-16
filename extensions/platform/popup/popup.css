@@ -1,0 +1,229 @@
+@import "../shared/theme/tokens.css";
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 380px;
+  min-height: 520px;
+  margin: 0;
+  background: var(--as-bg);
+  color: var(--as-text);
+  font-family: var(--as-font);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.shell {
+  padding: 18px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: var(--as-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 24px;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+h2 {
+  font-size: 14px;
+}
+
+.pill {
+  border: 1px solid var(--as-border);
+  border-radius: 999px;
+  color: var(--as-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 10px;
+}
+
+.pill.connected {
+  background: color-mix(in srgb, var(--as-success) 14%, transparent);
+  border-color: color-mix(in srgb, var(--as-success) 38%, var(--as-border));
+  color: var(--as-success);
+}
+
+.pill.disconnected {
+  background: color-mix(in srgb, var(--as-warning) 13%, transparent);
+  border-color: color-mix(in srgb, var(--as-warning) 38%, var(--as-border));
+  color: var(--as-warning);
+}
+
+.panel {
+  background: var(--as-surface);
+  border: 1px solid var(--as-border);
+  border-radius: var(--as-radius-lg);
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.panel-title {
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.muted {
+  color: var(--as-text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.search-section {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.permission-panel {
+  background: color-mix(in srgb, var(--as-accent) 8%, var(--as-surface));
+  border: 1px solid color-mix(in srgb, var(--as-accent) 22%, var(--as-border));
+  border-radius: var(--as-radius-md);
+  color: var(--as-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  margin-bottom: 16px;
+  padding: 12px;
+}
+
+.offline-state {
+  margin-top: 6px;
+}
+
+label {
+  color: var(--as-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+input {
+  width: 100%;
+  border: 1px solid var(--as-border);
+  border-radius: var(--as-radius-md);
+  background: var(--as-surface);
+  color: var(--as-text);
+  outline: none;
+  padding: 12px 13px;
+  transition: border-color var(--as-motion-fast), background var(--as-motion-fast);
+}
+
+input:focus {
+  border-color: var(--as-accent);
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 18px 0 10px;
+}
+
+.site-label {
+  color: var(--as-text-muted);
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.entry-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.entry {
+  align-items: center;
+  background: var(--as-surface);
+  border: 1px solid var(--as-border);
+  border-radius: var(--as-radius-md);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr auto;
+  padding: 12px;
+  transition: border-color var(--as-motion-fast), transform var(--as-motion-fast);
+}
+
+.entry:hover {
+  border-color: var(--as-accent);
+  transform: translateY(-1px);
+}
+
+.entry-name {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.entry-meta {
+  color: var(--as-text-muted);
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+button {
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 800;
+  transition: background var(--as-motion-fast), color var(--as-motion-fast), opacity var(--as-motion-fast);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.primary {
+  background: var(--as-accent);
+  color: var(--as-accent-contrast);
+  padding: 9px 12px;
+}
+
+.secondary {
+  background: var(--as-surface-muted);
+  color: var(--as-text);
+  margin-top: 12px;
+  padding: 9px 12px;
+}
+
+.ghost {
+  background: transparent;
+  color: var(--as-accent);
+  padding: 6px 8px;
+}
+
+.empty {
+  border: 1px dashed var(--as-border);
+  border-radius: var(--as-radius-md);
+  color: var(--as-text-muted);
+  padding: 18px;
+  text-align: center;
+}

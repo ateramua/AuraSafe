@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AuraSafe</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="header">
+        <div>
+          <p class="eyebrow">AuraSafe</p>
+          <h1>Vault Companion</h1>
+        </div>
+        <span id="statusPill" class="pill">Checking</span>
+      </header>
+
+      <section id="connectionPanel" class="panel">
+        <p id="connectionTitle" class="panel-title">Connecting to desktop app</p>
+        <p id="connectionDetail" class="muted">AuraSafe will use the local desktop bridge when available.</p>
+        <button id="connectButton" class="secondary" type="button">Reconnect</button>
+      </section>
+
+      <section class="search-section">
+        <label for="searchInput">Search vault</label>
+        <input id="searchInput" type="search" placeholder="Search sites, usernames, or accounts" autocomplete="off">
+      </section>
+
+      <section id="permissionPanel" class="permission-panel">
+        <p><strong>Privacy-first autofill:</strong> AuraSafe injects autofill code only after you click Fill for the active tab.</p>
+        <p id="offlineState" class="offline-state">Offline cache status will appear here.</p>
+      </section>
+
+      <section>
+        <div class="section-heading">
+          <div>
+            <h2>Current Site</h2>
+            <p id="currentSite" class="site-label">Detecting active tab</p>
+          </div>
+          <button id="refreshButton" class="ghost" type="button">Refresh</button>
+        </div>
+        <ul id="entryList" class="entry-list" aria-live="polite"></ul>
+      </section>
+    </main>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

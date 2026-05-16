@@ -1,0 +1,5 @@
+.aurasafe-fill-highlight {
+  outline: 2px solid #255f4b !important;
+  outline-offset: 2px !important;
+  transition: outline-color 180ms ease, outline-offset 180ms ease !important;
+}

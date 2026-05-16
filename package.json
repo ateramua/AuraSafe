@@ -7,13 +7,19 @@
   "type": "module",
   "scripts": {
     "build": "next build",
-    "dev": "concurrently \"next dev\" \"wait-on http://localhost:3000 && NODE_ENV=development electron .\"",
+    "dev": "concurrently \"next dev -p 3000\" \"wait-on http://localhost:3000 && NODE_ENV=development AURASAFE_DEV_URL=http://localhost:3000 electron .\"",
     "electron:prod": "npm run build && concurrently \"serve -s out -l 3000\" \"wait-on http://localhost:3000 && electron .\"",
     "start": "electron .",
     "dist": "npm run clean && npm run build && electron-builder",
     "clean": "rimraf .next out release dist",
-    "extension:chrome": "web-ext build -s extensions/chrome -a release/extensions",
-    "extension:firefox": "web-ext build -s extensions/firefox -a release/extensions"
+    "extension:platform:build": "node extensions/platform/scripts/build-extension.mjs all",
+    "extension:platform:chromium": "node extensions/platform/scripts/build-extension.mjs chromium",
+    "extension:platform:firefox": "node extensions/platform/scripts/build-extension.mjs firefox",
+    "extension:platform:package": "npm run extension:platform:build && node extensions/platform/scripts/package-extension.mjs all",
+    "extension:platform:package:chromium": "npm run extension:platform:chromium && node extensions/platform/scripts/package-extension.mjs chromium",
+    "extension:platform:package:firefox": "npm run extension:platform:firefox && node extensions/platform/scripts/package-extension.mjs firefox",
+    "extension:platform:test": "node --test extensions/platform/tests/*.test.mjs",
+    "extension:platform:validate": "node extensions/platform/scripts/validate-extension.mjs"
   },
   "dependencies": {
     "crypto-js": "^4.2.0",

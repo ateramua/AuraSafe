@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AuraSafe Companion Settings</title>
+    <link rel="stylesheet" href="options.css">
+  </head>
+  <body>
+    <main class="settings">
+      <p class="eyebrow">AuraSafe Companion</p>
+      <h1>Settings and diagnostics</h1>
+      <section class="card">
+        <h2>Desktop connection</h2>
+        <p id="desktopStatus">Checking desktop bridge...</p>
+        <button id="checkDesktop" type="button">Check again</button>
+      </section>
+      <section class="card">
+        <h2>Bridge diagnostics</h2>
+        <dl id="diagnostics" class="diagnostics"></dl>
+      </section>
+      <section class="card">
+        <h2>Security posture</h2>
+        <p>Session and offline metadata are stored as encrypted WebCrypto envelopes. Offline vault cache is redacted and browse-only.</p>
+      </section>
+      <section class="card">
+        <h2>Offline cache</h2>
+        <p id="offlineStatus">Checking encrypted cache...</p>
+        <button id="clearOfflineCache" class="secondary" type="button">Clear offline cache</button>
+      </section>
+      <section class="card">
+        <h2>Browser permissions</h2>
+        <p>AuraSafe uses active-tab access for on-demand autofill. The extension avoids always-on page scripts and injects autofill helpers only after a user action.</p>
+      </section>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

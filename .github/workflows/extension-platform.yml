@@ -1,0 +1,44 @@
+name: Extension Platform
+
+on:
+  pull_request:
+    paths:
+      - 'extensions/platform/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/extension-platform.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'extensions/platform/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/extension-platform.yml'
+
+jobs:
+  validate:
+    name: Validate extension packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate extension platform
+        run: npm run extension:platform:validate
+
+      - name: Upload extension packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurasafe-extension-packages
+          path: release/extensions/packages/*

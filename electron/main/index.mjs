@@ -91,6 +91,19 @@ const BRIDGE_SESSION_TOKENS = new Map();
 const BRIDGE_RATE_LIMITS = new Map();
 const BRIDGE_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const BRIDGE_RATE_LIMIT_MAX_REQUESTS = 120;
+const BRIDGE_PROTOCOL_VERSION = 1;
+const BRIDGE_CAPABILITIES = [
+  'vault.entries.read',
+  'vault.entries.write',
+  'vault.autofill.queue',
+  'vault.autofill.pending',
+  'finance.transactions.read',
+  'finance.accounts.read',
+  'finance.categories.read',
+  'settings.read',
+  'settings.write',
+  'diagnostics.read',
+];
 
 // ========== Database helpers ==========
 function getDatabasePath() {
@@ -338,6 +351,18 @@ function sendBridgeError(res, status, message, details = null) {
   res.status(status).json({ status: 'error', message, details });
 }
 
+function getBridgeMetadata() {
+  return {
+    status: 'ok',
+    app: 'AuraSafe',
+    version: app.getVersion(),
+    bridgeProtocol: BRIDGE_PROTOCOL_VERSION,
+    capabilities: BRIDGE_CAPABILITIES,
+    supportsHandshake: true,
+    originAllowlist: ['chrome-extension://', 'moz-extension://', 'edge-extension://'],
+  };
+}
+
 async function getAvailableLocalPort(start, end) {
   for (let port = start; port <= end; port++) {
     const available = await new Promise((resolve) => {
@@ -366,6 +391,8 @@ function writeBridgeInfoFile() {
       token: EXTENSION_SECRET,
       createdAt: new Date().toISOString(),
       description: 'AuraSafe local extension bridge info',
+      bridgeProtocol: BRIDGE_PROTOCOL_VERSION,
+      capabilities: BRIDGE_CAPABILITIES,
       originAllowlist: ['chrome-extension://', 'moz-extension://', 'edge-extension://'],
       platform: process.platform,
       path: filePath,
@@ -423,6 +450,11 @@ function validateBridgeSession(req, res, next) {
     return sendBridgeError(res, 401, 'Invalid or expired session token');
   }
 
+  const origin = req.headers.origin || null;
+  if (session.origin && origin && session.origin !== origin) {
+    return sendBridgeError(res, 403, 'Session origin mismatch');
+  }
+
   req.bridgeSession = session;
   next();
 }
@@ -463,7 +495,7 @@ async function createBridgeServer() {
     });
 
     bridgeApp.get('/bridge/public', (req, res) => {
-      res.json({ status: 'ok', app: 'AuraSafe', version: app.getVersion(), supportsHandshake: true });
+      res.json(getBridgeMetadata());
     });
 
     bridgeApp.get('/bridge/info', (req, res) => {
@@ -471,17 +503,11 @@ async function createBridgeServer() {
       if (origin && !validateExtensionOrigin(origin)) {
         return sendBridgeError(res, 403, 'Origin not allowed');
       }
-      res.json({
-        status: 'ok',
-        app: 'AuraSafe',
-        version: app.getVersion(),
-        supportsHandshake: true,
-        originAllowlist: ['chrome-extension://', 'moz-extension://', 'edge-extension://'],
-      });
+      res.json(getBridgeMetadata());
     });
 
     bridgeApp.get('/bridge/health', (req, res) => {
-      res.json({ status: 'ok', app: 'AuraSafe', version: app.getVersion(), uptime: process.uptime() });
+      res.json({ ...getBridgeMetadata(), uptime: process.uptime() });
     });
 
     bridgeApp.post('/bridge/handshake', (req, res) => {
@@ -500,7 +526,17 @@ async function createBridgeServer() {
       });
 
       console.log('🔐 Created bridge session token for origin', origin);
-      res.json({ status: 'ok', sessionToken, expiresAt, version: app.getVersion() });
+      res.json({ ...getBridgeMetadata(), sessionToken, expiresAt });
+    });
+
+    bridgeApp.get('/bridge/diagnostics', validateBridgeSession, (req, res) => {
+      res.json({
+        ...getBridgeMetadata(),
+        bridgePort,
+        sessionExpiresAt: req.bridgeSession?.expiresAt || null,
+        activeSessions: BRIDGE_SESSION_TOKENS.size,
+        uptime: process.uptime(),
+      });
     });
 
     bridgeApp.post('/bridge/command', validateBridgeSession, async (req, res) => {
@@ -535,6 +571,11 @@ async function handleBridgeCommand(body) {
   }
 
   const action = body.action;
+  const requestedProtocol = Number(body.protocolVersion || 1);
+  if (!Number.isFinite(requestedProtocol) || requestedProtocol > BRIDGE_PROTOCOL_VERSION) {
+    throw new Error(`Unsupported bridge protocol version: ${body.protocolVersion}`);
+  }
+
   const currentUser = userService.getCurrentUser();
   const db = await getDatabase();
 
@@ -1344,7 +1385,7 @@ app.whenReady().then(async () => {
 
   // ========== Serve the app ==========
   if (isDev) {
-    createWindow('http://localhost:3000');
+    createWindow(process.env.AURASAFE_DEV_URL || 'http://localhost:3000');
   } else {
     const appServer = express();
 
