@@ -1,0 +1,12 @@
+{
+  "name": "@aurasafe/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AuraSafe Electron desktop shell (renderer at repo root src/, electron at repo root electron/)",
+  "scripts": {
+    "dev": "npm run dev --prefix ../..",
+    "build": "npm run build --prefix ../..",
+    "dist": "npm run dist --prefix ../..",
+    "extension:platform:build": "npm run extension:platform:build --prefix ../.."
+  }
+}

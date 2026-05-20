@@ -171,3 +171,6 @@ out/
 
 # Node
 node_modules/
+
+# Local cleanup archives (nested duplicate backups)
+.cleanup-archive/

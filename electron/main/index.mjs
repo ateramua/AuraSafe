@@ -1110,13 +1110,28 @@ app.whenReady().then(async () => {
       return { success: false, error: 'Vault must be unlocked to export backup' };
     }
 
-    const result = await dialog.showSaveDialog({
+    let exportPayload = vaultData;
+    if (!exportPayload?.entries?.length) {
+      const entries = await loadVaultEntries();
+      exportPayload = {
+        entries,
+        _meta: { lastModified: Date.now(), version: '1.0' },
+      };
+    }
+    if (!exportPayload.entries?.length) {
+      return { success: false, error: 'No vault entries to export' };
+    }
+
+    const result = await dialog.showSaveDialog(getDialogParent(), {
       title: 'Export Vault Backup',
-      defaultPath: `AuraSafe_Backup_${new Date().toISOString().split('T')[0]}.aura`,
+      defaultPath: path.join(
+        app.getPath('documents'),
+        `AuraSafe_Backup_${new Date().toISOString().split('T')[0]}.aura`,
+      ),
       filters: [
         { name: 'AuraSafe Backup', extensions: ['aura'] },
-        { name: 'All Files', extensions: ['*'] }
-      ]
+        { name: 'All Files', extensions: ['*'] },
+      ],
     });
 
     if (result.canceled) {
@@ -1124,13 +1139,16 @@ app.whenReady().then(async () => {
     }
 
     const filePath = result.filePath;
+    if (!filePath) {
+      return { success: false, cancelled: true };
+    }
 
     try {
       const backupContainer = {
         version: '1.0',
         timestamp: Date.now(),
-        data: vaultData,
-        checksum: null
+        data: exportPayload,
+        checksum: null,
       };
 
       // Calculate checksum for integrity verification
@@ -1174,16 +1192,16 @@ app.whenReady().then(async () => {
       return { success: false, error: 'Vault must be unlocked to import backup' };
     }
 
-    const result = await dialog.showOpenDialog({
+    const result = await dialog.showOpenDialog(getDialogParent(), {
       title: 'Import Vault Backup',
       filters: [
         { name: 'AuraSafe Backup', extensions: ['aura'] },
-        { name: 'All Files', extensions: ['*'] }
+        { name: 'All Files', extensions: ['*'] },
       ],
-      properties: ['openFile']
+      properties: ['openFile'],
     });
 
-    if (result.canceled || !result.filePaths.length) {
+    if (result.canceled || !result.filePaths?.length) {
       return { success: false, cancelled: true };
     }
 
