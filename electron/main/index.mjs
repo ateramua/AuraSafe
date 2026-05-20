@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, protocol, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
@@ -12,6 +12,28 @@ import { v4 as uuidv4 } from 'uuid';
 import { WebSocketServer } from 'ws';
 import { randomBytes, createHash } from 'crypto';
 import BackupManager from '../backup/backup-manager.mjs';
+import { parseBackupFileContent } from '../backup/parse-backup-file.mjs';
+import { waitForDevServer, normalizeDevUrl } from '../dev-server.mjs';
+
+if (!process.versions.electron) {
+  console.error(
+    'AuraSafe must be started with Electron, not Node.\n' +
+      'Use: npm run dev\n' +
+      '(If you use Cursor/VS Code, ELECTRON_RUN_AS_NODE may be set — scripts/run-electron.mjs clears it.)'
+  );
+  process.exit(1);
+}
+
+// Avoid crashing when stdout/stderr is closed (e.g. terminal closed, concurrently)
+function tolerateStreamEpipe(stream) {
+  stream?.on?.('error', (err) => {
+    if (err?.code !== 'EPIPE') {
+      console.error('Stream error:', err);
+    }
+  });
+}
+tolerateStreamEpipe(process.stdout);
+tolerateStreamEpipe(process.stderr);
 
 // Import your custom modules
 import {
@@ -30,6 +52,10 @@ import {
 import { isBiometricAvailable } from '../crypto/biometric-manager.mjs';
 import { pushToIPFS, pullFromIPFS, getCurrentCID } from '../sync/sync-engine.mjs';
 import { vaultBackupManager } from '../services/vault-backup.mjs';
+import {
+  pickAndImportCredentialsCsv,
+  pickAndPreviewCredentialsCsv,
+} from '../services/credential-import.mjs';
 
 // ========================
 // 🔐 SINGLE INSTANCE LOCK (ENHANCED FIX)
@@ -69,10 +95,15 @@ const preloadPath = app.isPackaged
 
 console.log('📌 Preload path:', preloadPath);
 console.log('📌 Preload exists:', fs.existsSync(preloadPath));
-const isDev = process.env.NODE_ENV === 'development';
+// Unpackaged builds use the dev server (next dev or serve); packaged apps serve static `out/`
+const isDev = !app.isPackaged;
 
 let mainWindow;
 let server;
+
+function getDialogParent() {
+  return BrowserWindow.getFocusedWindow() || mainWindow || null;
+}
 let bridgeServer;
 let bridgeApp;
 let bridgePort = null;
@@ -794,6 +825,14 @@ function startWebSocketServer() {
   }
 }
 
+function loadErrorPage(title, detail) {
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
+  <style>body{font-family:system-ui;background:#111;color:#eee;padding:2rem;max-width:640px;margin:auto}
+  h1{color:#f87171}code{background:#222;padding:2px 6px;border-radius:4px}</style></head>
+  <body><h1>${title}</h1><p>${detail}</p><p>Check the terminal running <code>npm run dev</code>.</p></body></html>`;
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+}
+
 // ========== Create window ==========
 function createWindow(url) {
   console.log('🪟 Creating BrowserWindow...');
@@ -804,14 +843,15 @@ function createWindow(url) {
     height: 900,
     x: 100,
     y: 100,
-    show: true,
-    backgroundColor: '#111111',
+    show: false,
+    backgroundColor: '#092116',
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
       sandbox: false,
       nodeIntegration: false,
       devTools: true,
+      webSecurity: !isDev,
     },
   });
 
@@ -844,9 +884,22 @@ function createWindow(url) {
     console.log('✅ did-finish-load');
   });
 
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    console.error('❌ did-fail-load');
-    console.error(errorCode, errorDescription);
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.error('❌ did-fail-load', validatedURL, errorCode, errorDescription);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.loadURL(
+        loadErrorPage(
+          'Failed to load AuraSafe',
+          `Could not load <code>${validatedURL}</code>: ${errorDescription} (${errorCode}). Is Next.js running on port 3000?`
+        )
+      );
+      mainWindow.show();
+    }
+  });
+
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    const tag = ['verbose', 'info', 'warning', 'error'][level] || 'log';
+    console.log(`[renderer:${tag}]`, message, sourceId ? `(${sourceId}:${line})` : '');
   });
 
   mainWindow.webContents.on('render-process-gone', (event, details) => {
@@ -854,9 +907,9 @@ function createWindow(url) {
     console.error(details);
   });
 
-  mainWindow.webContents.openDevTools({
-    mode: 'detach',
-  });
+  if (isDev) {
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
+  }
 
   mainWindow.loadURL(url)
     .then(() => {
@@ -865,6 +918,12 @@ function createWindow(url) {
     .catch((err) => {
       console.error('❌ loadURL failed');
       console.error(err);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.loadURL(
+          loadErrorPage('Failed to load AuraSafe', err.message || String(err))
+        );
+        mainWindow.show();
+      }
     });
 }
 
@@ -928,46 +987,64 @@ app.whenReady().then(async () => {
     return { success: true };
   });
 
-  ipcMain.handle('backup:import-file-pre-vault', async () => {
+  ipcMain.handle('backup:import-file-pre-vault', async (event, options = {}) => {
     console.log('[Backup] import-file-pre-vault called');
 
-    const result = await dialog.showOpenDialog({
-      title: 'Import Vault Backup',
-      filters: [
-        { name: 'AuraSafe Backup', extensions: ['aura'] },
-        { name: 'All Files', extensions: ['*'] }
-      ],
-      properties: ['openFile']
-    });
+    let filePath = options.filePath;
 
-    if (result.canceled || !result.filePaths.length) {
-      return { success: false, cancelled: true };
+    if (!filePath) {
+      const dialogResult = await dialog.showOpenDialog(getDialogParent(), {
+        title: 'Import Vault Backup',
+        filters: [
+          { name: 'AuraSafe Backup', extensions: ['aura'] },
+          { name: 'JSON Files', extensions: ['json'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+        properties: ['openFile'],
+      });
+
+      if (dialogResult.canceled || !dialogResult.filePaths.length) {
+        return { success: false, cancelled: true };
+      }
+
+      filePath = dialogResult.filePaths[0];
     }
-
-    const filePath = result.filePaths[0];
 
     try {
       const fileContent = fs.readFileSync(filePath, 'utf-8');
-      const backupContainer = JSON.parse(fileContent);
+      const parsed = parseBackupFileContent(fileContent, {
+        password: options.password,
+      });
 
-      if (backupContainer.version !== '1.0') {
-        throw new Error(`Incompatible backup version: ${backupContainer.version}`);
+      if (parsed.needsPassword) {
+        return { success: false, needsPassword: true, filePath };
       }
 
-      console.log('[Backup] Import successful, entries:', backupContainer.data?.entries?.length || 0);
+      const entryCount = parsed.vaultData?.entries?.length || 0;
+      console.log('[Backup] Import successful, entries:', entryCount);
+
+      if (entryCount === 0) {
+        throw new Error('Backup file contains no entries');
+      }
 
       return {
         success: true,
-        backupData: backupContainer,
-        filePath: filePath
+        backupData: {
+          version: '1.0',
+          timestamp: Date.now(),
+          data: parsed.vaultData,
+        },
+        filePath,
+        entriesCount: entryCount,
+        encrypted: Boolean(options.password),
       };
     } catch (error) {
       console.error('[Backup] Import failed:', error);
-      return { success: false, error: error.message };
+      return { success: false, error: error.message, filePath };
     }
   });
 
-  ipcMain.handle('backup:icloud-restore-pre-vault', async () => {
+  ipcMain.handle('backup:icloud-restore-pre-vault', async (event, options = {}) => {
     console.log('[Backup] icloud-restore-pre-vault called');
 
     const iCloudBackupDir = path.join(
@@ -996,14 +1073,36 @@ app.whenReady().then(async () => {
     }
 
     const latestBackup = backupFiles[0];
-    const fileContent = fs.readFileSync(latestBackup.path, 'utf-8');
-    const backupContainer = JSON.parse(fileContent);
 
-    return {
-      success: true,
-      backupData: backupContainer,
-      backupDate: backupContainer.timestamp
-    };
+    try {
+      const fileContent = fs.readFileSync(latestBackup.path, 'utf-8');
+      const parsed = parseBackupFileContent(fileContent, {
+        password: options.password,
+      });
+
+      if (parsed.needsPassword) {
+        return { success: false, needsPassword: true, filePath: latestBackup.path };
+      }
+
+      const entryCount = parsed.vaultData?.entries?.length || 0;
+      if (entryCount === 0) {
+        throw new Error('iCloud backup contains no entries');
+      }
+
+      return {
+        success: true,
+        backupData: {
+          version: '1.0',
+          timestamp: Date.now(),
+          data: parsed.vaultData,
+        },
+        backupDate: Date.now(),
+        entriesCount: entryCount,
+      };
+    } catch (error) {
+      console.error('[Backup] iCloud pre-vault restore failed:', error);
+      return { success: false, error: error.message };
+    }
   });
 
   ipcMain.handle('backup:export', async (event, vaultData) => {
@@ -1308,6 +1407,35 @@ app.whenReady().then(async () => {
     return newEntries;
   });
 
+  ipcMain.handle('vault:importCredentialsCsv', async (event, options = {}) => {
+    if (!isUnlocked()) {
+      return { success: false, error: 'Vault must be unlocked to import passwords' };
+    }
+    try {
+      const result = await pickAndImportCredentialsCsv(getDialogParent(), options);
+      if (result.success && result.imported > 0 && (await isAutoSyncEnabled())) {
+        try {
+          await pushToIPFS();
+        } catch (err) {
+          console.error('Auto-sync failed after CSV import:', err);
+        }
+      }
+      return result;
+    } catch (error) {
+      console.error('[CSV import] failed:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('vault:previewCredentialsCsv', async () => {
+    try {
+      return await pickAndPreviewCredentialsCsv(getDialogParent());
+    } catch (error) {
+      console.error('[CSV preview] failed:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   ipcMain.handle('autofill', async (event, data) => {
     if (!isUnlocked()) throw new Error('Vault locked');
     const response = await handleBridgeCommand({ action: 'queueAutofill', entry: data.entry, url: data.url });
@@ -1385,7 +1513,24 @@ app.whenReady().then(async () => {
 
   // ========== Serve the app ==========
   if (isDev) {
-    createWindow(process.env.AURASAFE_DEV_URL || 'http://localhost:3000');
+    const devUrl = normalizeDevUrl(
+      process.env.AURASAFE_DEV_URL || 'http://127.0.0.1:3000/'
+    );
+    try {
+      console.log('⏳ Waiting for Next.js dev server at', devUrl);
+      await waitForDevServer(devUrl);
+      console.log('✅ Next.js dev server is ready');
+    } catch (err) {
+      console.error('❌', err.message);
+      createWindow(
+        loadErrorPage(
+          'Next.js dev server not ready',
+          'Start the app with <code>npm run dev</code> and wait until you see “Ready” in the terminal.'
+        )
+      );
+      return;
+    }
+    createWindow(devUrl);
   } else {
     const appServer = express();
 

@@ -1,4 +1,12 @@
-import { executeScript, getRuntime, insertCSS, tabsQuery, tabsSendMessage } from '../shared/browser/runtime.js';
+import {
+  executeScript,
+  getRuntime,
+  insertCSS,
+  tabsCreate,
+  tabsQuery,
+  tabsSendMessage,
+} from '../shared/browser/runtime.js';
+import { normalizeEntryUrl } from '../shared/domain/entryUrl.js';
 import { BridgeAction, ExtensionMessageType } from '../shared/bridge/protocol.js';
 import {
   callDesktop,
@@ -128,6 +136,20 @@ async function entriesForActiveTab() {
   };
 }
 
+async function copyEntryCredentials(entry) {
+  const text = [entry?.username, entry?.password].filter(Boolean).join('\n');
+  if (!text || !globalThis.navigator?.clipboard?.writeText) {
+    return false;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (error) {
+    logger.warn('Failed to copy credentials for launch', error);
+    return false;
+  }
+}
+
 async function ensureAutofillInjected(tabId) {
   await insertCSS({
     target: { tabId },
@@ -219,6 +241,16 @@ async function handleMessage(message) {
         entry: message.entry,
       });
       return response || { success: true };
+    }
+
+    case ExtensionMessageType.launchEntry: {
+      const url = normalizeEntryUrl(message.entry);
+      if (!url) {
+        throw new Error('No website URL saved for this entry.');
+      }
+      const copied = await copyEntryCredentials(message.entry);
+      const tab = await tabsCreate({ url, active: true });
+      return { success: true, tabId: tab?.id, url, copied };
     }
 
     default:

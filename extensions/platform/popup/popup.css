@@ -172,6 +172,12 @@ input:focus {
   transition: border-color var(--as-motion-fast), transform var(--as-motion-fast);
 }
 
+.entry-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
 .entry:hover {
   border-color: var(--as-accent);
   transform: translateY(-1px);
@@ -182,10 +188,38 @@ input:focus {
   font-weight: 800;
 }
 
+.entry-details {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.entry-field {
+  color: var(--as-text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 6px;
+  line-height: 1.35;
+}
+
+.entry-field-label {
+  color: var(--as-text-muted);
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.entry-field-value {
+  color: var(--as-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.04em;
+  word-break: break-all;
+}
+
 .entry-meta {
   color: var(--as-text-muted);
   font-size: 12px;
-  margin-top: 3px;
+  margin-top: 2px;
 }
 
 button {
@@ -205,6 +239,12 @@ button:disabled {
   background: var(--as-accent);
   color: var(--as-accent-contrast);
   padding: 9px 12px;
+}
+
+.entry-actions .launch {
+  background: var(--as-surface-muted);
+  color: var(--as-text);
+  padding: 9px 10px;
 }
 
 .secondary {

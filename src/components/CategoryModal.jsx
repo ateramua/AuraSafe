@@ -1,5 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import EntryModal from './EntryModal';
+
+/** Display/search label for credentials (stored as name and/or title). */
+function getCredentialName(entry) {
+    return (entry.name || entry.title || entry.displayName || '').trim();
+}
+
+function credentialMatchesQuery(entry, query) {
+    const haystack = [
+        getCredentialName(entry),
+        entry.username,
+        entry.password,
+        entry.url,
+        entry.notes,
+    ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+    return haystack.includes(query);
+}
 
 const categoryToType = {
     all: null,
@@ -18,8 +37,21 @@ export default function CategoryModal({ isOpen, onClose, category, api }) {
     const [editingEntry, setEditingEntry] = useState(null);
     const [autofillStatus, setAutofillStatus] = useState({});
     const [copiedField, setCopiedField] = useState(null);
+    const [searchQuery, setSearchQuery] = useState('');
 
     const entryType = categoryToType[category];
+    const isPasswordCategory = category === 'passwords';
+
+    const displayedEntries = useMemo(() => {
+        if (!isPasswordCategory) {
+            return entries;
+        }
+        const query = searchQuery.trim().toLowerCase();
+        if (!query) {
+            return entries;
+        }
+        return entries.filter((entry) => credentialMatchesQuery(entry, query));
+    }, [entries, searchQuery, isPasswordCategory]);
 
     // Load autofill preferences from localStorage
     const loadAutofillPrefs = () => {
@@ -58,6 +90,7 @@ export default function CategoryModal({ isOpen, onClose, category, api }) {
 
     useEffect(() => {
         if (isOpen) {
+            setSearchQuery('');
             fetchEntries();
         }
     }, [isOpen, category]);
@@ -197,7 +230,7 @@ export default function CategoryModal({ isOpen, onClose, category, api }) {
         switch (displayType) {
             case 'credential':
                 return {
-                    primary: entry.name || entry.title || 'Untitled',
+                    primary: getCredentialName(entry) || 'Untitled',
                     username: entry.username,
                     usernameMasked: maskValue(entry.username),
                     password: entry.password,
@@ -281,8 +314,6 @@ export default function CategoryModal({ isOpen, onClose, category, api }) {
         driverLicenses: "Driver's Licenses",
     }[category] || category;
 
-    const isPasswordCategory = category === 'passwords';
-
     return (
         <>
             <div style={styles.overlay} onClick={onClose}>
@@ -301,13 +332,50 @@ export default function CategoryModal({ isOpen, onClose, category, api }) {
                             </button>
                         </div>
 
+                        {isPasswordCategory && !loading && (
+                            <div style={styles.listToolbar}>
+                                <div style={styles.entryStats}>
+                                    <span style={styles.entryStatsPrimary}>
+                                        {entries.length} {entries.length === 1 ? 'entry' : 'entries'} total
+                                    </span>
+                                    <span style={styles.entryStatsSecondary}>
+                                        Showing {displayedEntries.length} of {entries.length}
+                                    </span>
+                                </div>
+                                <div style={styles.searchRow}>
+                                    <input
+                                        type="search"
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        placeholder="Search name, username, password, website, notes…"
+                                        style={styles.searchInput}
+                                        aria-label="Search credentials by name, username, password, website, or notes"
+                                    />
+                                    {searchQuery.trim() && (
+                                        <button
+                                            type="button"
+                                            style={styles.searchClear}
+                                            onClick={() => setSearchQuery('')}
+                                        >
+                                            Clear
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
                         {loading ? (
                             <div style={styles.loading}>Loading entries...</div>
                         ) : entries.length === 0 ? (
                             <div style={styles.empty}>No entries yet. Click "Add New" to create one.</div>
+                        ) : isPasswordCategory && displayedEntries.length === 0 ? (
+                            <div style={styles.empty}>
+                                No credentials match &ldquo;{searchQuery.trim()}&rdquo;. Try the credential name,
+                                username, website, or other entry text.
+                            </div>
                         ) : (
                             <div style={styles.list}>
-                                {entries.map(entry => {
+                                {displayedEntries.map(entry => {
                                     const display = getEntryDisplay(entry);
                                     const isCredential = display.type === 'credential';
                                     
@@ -524,6 +592,54 @@ const styles = {
         fontSize: '0.9rem',
         fontWeight: '500',
         cursor: 'pointer',
+    },
+    listToolbar: {
+        marginBottom: '1rem',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        gap: '0.75rem',
+    },
+    entryStats: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.2rem',
+    },
+    entryStatsPrimary: {
+        fontSize: '0.9rem',
+        fontWeight: 600,
+        color: '#E8F5E9',
+    },
+    entryStatsSecondary: {
+        fontSize: '0.8rem',
+        color: '#9CA3AF',
+    },
+    searchRow: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.5rem',
+        width: '100%',
+        maxWidth: '420px',
+    },
+    searchInput: {
+        flex: 1,
+        padding: '0.55rem 0.85rem',
+        fontSize: '0.875rem',
+        color: '#F3F4F6',
+        background: '#111827',
+        border: '1px solid #2d4a2d',
+        borderRadius: '0.5rem',
+        outline: 'none',
+    },
+    searchClear: {
+        padding: '0.55rem 0.75rem',
+        fontSize: '0.8rem',
+        color: '#C8E6C9',
+        background: 'transparent',
+        border: '1px solid #4caf50',
+        borderRadius: '0.5rem',
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
     },
     loading: {
         textAlign: 'center',

@@ -16,6 +16,8 @@ try {
     getVaultEntries: () => ipcRenderer.invoke('vault:getEntries'),
     saveVaultEntry: (entry) => ipcRenderer.invoke('vault:saveEntry', entry),
     deleteVaultEntry: (id) => ipcRenderer.invoke('vault:deleteEntry', id),
+    previewCredentialsCsv: () => ipcRenderer.invoke('vault:previewCredentialsCsv'),
+    importCredentialsCsv: (options) => ipcRenderer.invoke('vault:importCredentialsCsv', options),
 
     // Biometric operations
     biometric: {
@@ -55,8 +57,8 @@ try {
     // 🔥 Pre-vault backup methods (available before initialization)
     backupPreVault: {
       initTemp: () => ipcRenderer.invoke('backup:init-temp'),
-      importFile: () => ipcRenderer.invoke('backup:import-file-pre-vault'),
-      iCloudRestore: () => ipcRenderer.invoke('backup:icloud-restore-pre-vault'),
+      importFile: (options) => ipcRenderer.invoke('backup:import-file-pre-vault', options || {}),
+      iCloudRestore: (options) => ipcRenderer.invoke('backup:icloud-restore-pre-vault', options || {}),
     },
 
     // Post-vault backup methods

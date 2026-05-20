@@ -7,11 +7,12 @@
   "type": "module",
   "scripts": {
     "build": "next build",
-    "dev": "concurrently \"next dev -p 3000\" \"wait-on http://localhost:3000 && NODE_ENV=development AURASAFE_DEV_URL=http://localhost:3000 electron .\"",
-    "electron:prod": "npm run build && concurrently \"serve -s out -l 3000\" \"wait-on http://localhost:3000 && electron .\"",
-    "start": "electron .",
+    "dev": "concurrently \"next dev -p 3000\" \"wait-on http://127.0.0.1:3000 && cross-env NODE_ENV=development AURASAFE_DEV_URL=http://127.0.0.1:3000/ node scripts/run-electron.mjs\"",
+    "electron:prod": "npm run build && concurrently \"serve -s out -l 3000\" \"wait-on http://127.0.0.1:3000 && cross-env AURASAFE_DEV_URL=http://127.0.0.1:3000/ node scripts/run-electron.mjs\"",
+    "start": "node scripts/run-electron.mjs",
     "dist": "npm run clean && npm run build && electron-builder",
     "clean": "rimraf .next out release dist",
+    "icons:generate": "bash scripts/generate-app-icon.sh",
     "extension:platform:build": "node extensions/platform/scripts/build-extension.mjs all",
     "extension:platform:chromium": "node extensions/platform/scripts/build-extension.mjs chromium",
     "extension:platform:firefox": "node extensions/platform/scripts/build-extension.mjs firefox",
@@ -19,6 +20,7 @@
     "extension:platform:package:chromium": "npm run extension:platform:chromium && node extensions/platform/scripts/package-extension.mjs chromium",
     "extension:platform:package:firefox": "npm run extension:platform:firefox && node extensions/platform/scripts/package-extension.mjs firefox",
     "extension:platform:test": "node --test extensions/platform/tests/*.test.mjs",
+    "test:import": "node --test electron/import/*.test.mjs",
     "extension:platform:validate": "node extensions/platform/scripts/validate-extension.mjs"
   },
   "dependencies": {

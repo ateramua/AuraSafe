@@ -1,5 +1,7 @@
 import { openOptionsPage, sendRuntimeMessage } from '../shared/browser/runtime.js';
 import { ExtensionMessageType } from '../shared/bridge/protocol.js';
+import { createEntryActions } from '../shared/ui/entryRowActions.js';
+import { populateEntryDetails } from '../shared/ui/entryRowDetails.js';
 
 const statusText = document.getElementById('statusText');
 const statusPill = document.getElementById('statusPill');
@@ -27,12 +29,6 @@ function entryLabel(entry) {
   return entry.displayName || entry.name || entry.title || entry.url || 'Untitled entry';
 }
 
-function entryMeta(entry) {
-  return [entry.username || entry.email || entry.login, entry.displayHost || entry.url || entry.website || entry.domain]
-    .filter(Boolean)
-    .join(' · ');
-}
-
 function renderEntries(entries) {
   entryList.textContent = '';
   if (!entries?.length) {
@@ -47,31 +43,20 @@ function renderEntries(entries) {
     const item = document.createElement('li');
     item.className = 'entry';
     const details = document.createElement('div');
+    details.className = 'entry-details';
     const name = document.createElement('div');
     name.className = 'entry-name';
     name.textContent = entryLabel(entry);
-    const meta = document.createElement('div');
-    meta.className = 'entry-meta';
-    meta.textContent = entryMeta(entry) || 'Ready to fill';
-    details.append(name, meta);
+    details.append(name);
+    populateEntryDetails(details, entry);
+    if (!details.querySelector('.entry-field, .entry-meta')) {
+      const meta = document.createElement('div');
+      meta.className = 'entry-meta';
+      meta.textContent = 'Ready to fill';
+      details.append(meta);
+    }
 
-    const fill = document.createElement('button');
-    fill.type = 'button';
-    const canFill = entry.fillAvailable !== false && !entry.offlineOnly;
-    fill.textContent = canFill ? 'Fill' : 'Browse';
-    fill.disabled = !canFill;
-    fill.addEventListener('click', async () => {
-      if (!canFill) {
-        return;
-      }
-      fill.disabled = true;
-      fill.textContent = 'Filling';
-      const response = await sendRuntimeMessage({ type: ExtensionMessageType.fillEntry, entry });
-      fill.textContent = response?.ok ? 'Filled' : 'Retry';
-      fill.disabled = false;
-    });
-
-    item.append(details, fill);
+    item.append(details, createEntryActions(entry));
     entryList.append(item);
   }
 }
@@ -98,7 +83,25 @@ async function loadDashboard() {
     renderEntries([]);
     return;
   }
-  renderSummary(response.result);
+
+  const summary = response.result;
+  if (summary?.status?.connected) {
+    const vaultResponse = await sendRuntimeMessage({
+      type: ExtensionMessageType.searchVault,
+      query: '',
+    });
+    if (vaultResponse?.ok && Array.isArray(vaultResponse.result)) {
+      summary.siteEntries = vaultResponse.result.slice(0, 12);
+      summary.vault = {
+        ...summary.vault,
+        count: vaultResponse.result.length,
+        available: true,
+        source: 'desktop',
+      };
+    }
+  }
+
+  renderSummary(summary);
 }
 
 refreshButton.addEventListener('click', loadDashboard);

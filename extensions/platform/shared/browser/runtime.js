@@ -101,6 +101,27 @@ export function storageRemove(keys) {
   });
 }
 
+export function tabsCreate(createProperties) {
+  const api = getRuntime();
+  return new Promise((resolve, reject) => {
+    try {
+      const result = api.tabs.create(createProperties, (tab) => {
+        const err = getLastRuntimeError();
+        if (err) {
+          reject(new Error(err.message || String(err)));
+          return;
+        }
+        resolve(tab);
+      });
+      if (result && typeof result.then === 'function') {
+        result.then(resolve).catch(reject);
+      }
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
 export function tabsQuery(queryInfo) {
   const api = getRuntime();
   return new Promise((resolve, reject) => {

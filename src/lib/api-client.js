@@ -1,7 +1,11 @@
 // src/lib/api-client.js
 
-// Helper: check if we're in Electron
-const isElectron = typeof window !== 'undefined' && window.api;
+/** Electron preload API, or null if unavailable (never cache — preload timing varies). */
+function getDesktopApi() {
+  if (typeof window === 'undefined') return null;
+  const api = window.api;
+  return api && typeof api === 'object' ? api : null;
+}
 
 // Mock data for development (when not in Electron)
 let mockEntries = [
@@ -13,7 +17,7 @@ let mockEntries = [
     url: 'https://google.com',
     notes: '',
     createdAt: Date.now(),
-    updatedAt: Date.now()
+    updatedAt: Date.now(),
   },
   {
     id: '2',
@@ -23,15 +27,16 @@ let mockEntries = [
     url: 'https://github.com',
     notes: 'Work account',
     createdAt: Date.now(),
-    updatedAt: Date.now()
-  }
+    updatedAt: Date.now(),
+  },
 ];
 
 // ===== Vault CRUD =====
 export async function addVaultEntry(entry) {
-  if (isElectron && window.api.saveVaultEntry) {
+  const api = getDesktopApi();
+  if (typeof api?.saveVaultEntry === 'function') {
     const newEntry = { ...entry, id: entry.id || Math.random().toString(36).substr(2, 9) };
-    await window.api.saveVaultEntry(newEntry);
+    await api.saveVaultEntry(newEntry);
     return newEntry;
   }
   console.log('Adding entry (mock)', entry);
@@ -41,12 +46,13 @@ export async function addVaultEntry(entry) {
 }
 
 export async function updateVaultEntry(id, entry) {
-  if (isElectron && window.api.saveVaultEntry) {
-    await window.api.saveVaultEntry({ ...entry, id });
+  const api = getDesktopApi();
+  if (typeof api?.saveVaultEntry === 'function') {
+    await api.saveVaultEntry({ ...entry, id });
     return entry;
   }
   console.log('Updating entry (mock)', id, entry);
-  const index = mockEntries.findIndex(e => e.id === id);
+  const index = mockEntries.findIndex((e) => e.id === id);
   if (index !== -1) {
     mockEntries[index] = { ...mockEntries[index], ...entry };
     return mockEntries[index];
@@ -55,18 +61,31 @@ export async function updateVaultEntry(id, entry) {
 }
 
 export async function deleteVaultEntry(id) {
-  if (isElectron && window.api.deleteVaultEntry) {
-    await window.api.deleteVaultEntry(id);
+  const api = getDesktopApi();
+  if (typeof api?.deleteVaultEntry === 'function') {
+    await api.deleteVaultEntry(id);
     return true;
   }
   console.log('Deleting entry (mock)', id);
-  mockEntries = mockEntries.filter(e => e.id !== id);
+  mockEntries = mockEntries.filter((e) => e.id !== id);
   return true;
 }
 
+export async function saveVaultEntry(entry) {
+  const api = getDesktopApi();
+  if (typeof api?.saveVaultEntry === 'function') {
+    return await api.saveVaultEntry(entry);
+  }
+  if (entry.id && mockEntries.some((e) => e.id === entry.id)) {
+    return updateVaultEntry(entry.id, entry);
+  }
+  return addVaultEntry(entry);
+}
+
 export async function loadVault() {
-  if (isElectron && window.api.getVaultEntries) {
-    return await window.api.getVaultEntries();
+  const api = getDesktopApi();
+  if (typeof api?.getVaultEntries === 'function') {
+    return await api.getVaultEntries();
   }
   console.log('Loading mock vault');
   return mockEntries;
@@ -77,38 +96,50 @@ export const getVaultEntries = loadVault;
 
 // ===== Vault state =====
 export async function isInitialized() {
-  if (isElectron && window.api.isInitialized) {
-    return await window.api.isInitialized();
+  const api = getDesktopApi();
+  if (typeof api?.isInitialized === 'function') {
+    return await api.isInitialized();
   }
   return false;
 }
 
 export async function isUnlocked() {
-  if (isElectron && window.api.isUnlocked) {
-    return await window.api.isUnlocked();
+  const api = getDesktopApi();
+  if (typeof api?.isUnlocked === 'function') {
+    return await api.isUnlocked();
   }
   return false;
 }
 
 export async function unlockVault(password) {
-  if (isElectron && window.api.unlockVault) {
-    return await window.api.unlockVault(password);
+  const api = getDesktopApi();
+  if (typeof api?.unlockVault === 'function') {
+    return await api.unlockVault(password);
   }
-  console.log('Mock unlock vault');
+  if (typeof window !== 'undefined') {
+    throw new Error(DESKTOP_API_MSG);
+  }
   return { success: true };
 }
 
+const DESKTOP_API_MSG =
+  'Desktop API not available. Run npm run dev from the AuraSafe repo root and create your vault in the Electron window (not a browser tab at localhost:3000).';
+
 export async function initVault(password) {
-  if (isElectron && window.api.initVault) {
-    return await window.api.initVault(password);
+  const api = getDesktopApi();
+  if (typeof api?.initVault === 'function') {
+    return await api.initVault(password);
   }
-  console.log('Mock init vault');
+  if (typeof window !== 'undefined') {
+    throw new Error(DESKTOP_API_MSG);
+  }
   return true;
 }
 
 export async function lockVault() {
-  if (isElectron && window.api.lockVault) {
-    return await window.api.lockVault();
+  const api = getDesktopApi();
+  if (typeof api?.lockVault === 'function') {
+    return await api.lockVault();
   }
   console.log('Mock lock vault');
   return true;
@@ -116,73 +147,125 @@ export async function lockVault() {
 
 // ===== Biometric =====
 export async function isBiometricAvailable() {
-  if (isElectron && window.api.biometric) {
-    return await window.api.biometric.isAvailable();
+  const api = getDesktopApi();
+  if (api?.biometric && typeof api.biometric.isAvailable === 'function') {
+    return await api.biometric.isAvailable();
   }
   return false;
 }
 
 export async function isBiometricEnabled() {
-  if (isElectron && window.api.biometric) {
-    return await window.api.biometric.isEnabled();
+  const api = getDesktopApi();
+  if (api?.biometric && typeof api.biometric.isEnabled === 'function') {
+    return await api.biometric.isEnabled();
   }
   return false;
 }
 
 export async function enableBiometric() {
-  if (isElectron && window.api.biometric) {
-    return await window.api.biometric.enable();
+  const api = getDesktopApi();
+  if (api?.biometric && typeof api.biometric.enable === 'function') {
+    return await api.biometric.enable();
   }
   return false;
 }
 
 export async function disableBiometric() {
-  if (isElectron && window.api.biometric) {
-    return await window.api.biometric.disable();
+  const api = getDesktopApi();
+  if (api?.biometric && typeof api.biometric.disable === 'function') {
+    return await api.biometric.disable();
   }
   return false;
 }
 
 export async function unlockWithBiometric() {
-  if (isElectron && window.api.biometric) {
-    return await window.api.biometric.unlock();
+  const api = getDesktopApi();
+  if (api?.biometric && typeof api.biometric.unlock === 'function') {
+    return await api.biometric.unlock();
   }
   return { success: false, error: 'Biometric not available' };
 }
 
 // ===== Sync =====
 export async function syncPush() {
-  if (isElectron && window.api.sync) {
-    return await window.api.sync.push();
+  const api = getDesktopApi();
+  if (api?.sync && typeof api.sync.push === 'function') {
+    return await api.sync.push();
   }
   return { success: false, error: 'Sync not available' };
 }
 
 export async function syncPull() {
-  if (isElectron && window.api.sync) {
-    return await window.api.sync.pull();
+  const api = getDesktopApi();
+  if (api?.sync && typeof api.sync.pull === 'function') {
+    return await api.sync.pull();
   }
   return { success: false, error: 'Sync not available' };
 }
 
 export async function getSyncCID() {
-  if (isElectron && window.api.sync) {
-    return await window.api.sync.getCID();
+  const api = getDesktopApi();
+  if (api?.sync && typeof api.sync.getCID === 'function') {
+    return await api.sync.getCID();
   }
   return null;
 }
 
 // ===== Settings =====
 export async function getAutoSync() {
-  if (isElectron && window.api.settings) {
-    return await window.api.settings.getAutoSync();
+  const api = getDesktopApi();
+  if (api?.settings && typeof api.settings.getAutoSync === 'function') {
+    return await api.settings.getAutoSync();
   }
   return false;
 }
 
 export async function setAutoSync(enabled) {
-  if (isElectron && window.api.settings) {
-    return await window.api.settings.setAutoSync(enabled);
+  const api = getDesktopApi();
+  if (api?.settings && typeof api.settings.setAutoSync === 'function') {
+    return await api.settings.setAutoSync(enabled);
   }
   return false;
+}
+
+/** True when the Electron preload exposed a full vault API. */
+export function hasDesktopVaultApi() {
+  const api = getDesktopApi();
+  return (
+    typeof api?.initVault === 'function' && typeof api?.unlockVault === 'function'
+  );
+}
+
+/**
+ * Vault bridge for renderer components: prefers Electron preload API,
+ * falls back to in-memory mock when window.api is unavailable (e.g. browser-only dev).
+ */
+export function getVaultBridge() {
+  const api = getDesktopApi();
+  if (typeof api?.initVault === 'function' && typeof api?.unlockVault === 'function') {
+    return api;
+  }
+
+  return {
+    isInitialized,
+    isUnlocked,
+    initVault,
+    unlockVault,
+    lockVault,
+    getVaultEntries: loadVault,
+    saveVaultEntry,
+    deleteVaultEntry,
+    biometric: {
+      isAvailable: isBiometricAvailable,
+      isEnabled: isBiometricEnabled,
+      enable: enableBiometric,
+      disable: disableBiometric,
+      unlock: unlockWithBiometric,
+    },
+    sync: {
+      push: syncPush,
+      pull: syncPull,
+      getCID: getSyncCID,
+    },
+  };
 }

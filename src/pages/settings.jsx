@@ -18,6 +18,15 @@ import { loadVault } from '../lib/store';
 import BackupSettings from '../components/BackupSettings';
 import VaultBackupModal from '../components/VaultBackupModal';
 import PasswordGenerator from '../components/PasswordGenerator';
+import CredentialCsvImport from '../components/CredentialCsvImport';
+import {
+  pickPreVaultBackup,
+  pickPreVaultICloudBackup,
+  getPendingRestoreMeta,
+  formatRestoreSuccessMessage,
+} from '../lib/backup-restore';
+import { hasDesktopVaultApi } from '../lib/api-client';
+import RestoreStatusBanner from '../components/RestoreStatusBanner';
 
 // Safe link that uses Next.js router if available, otherwise falls back to full page load
 function SafeLink({ href, children, className }) {
@@ -59,6 +68,9 @@ export default function SettingsPage() {
   const [showBackupModal, setShowBackupModal] = useState(false);
   const [showGenerator, setShowGenerator] = useState(false);
   const [generatorStatus, setGeneratorStatus] = useState('');
+  const [restoreLoading, setRestoreLoading] = useState(false);
+  const [restoreMessage, setRestoreMessage] = useState('');
+  const [restoreMeta, setRestoreMeta] = useState(null);
   const api = typeof window !== 'undefined' ? window.api : null;
 
   // 🛠️ FIX: Move testBackup INSIDE the component
@@ -141,6 +153,11 @@ export default function SettingsPage() {
     init();
   }, []);
 
+  useEffect(() => {
+    const meta = getPendingRestoreMeta();
+    if (meta) setRestoreMeta(meta);
+  }, []);
+
   // Compute security metrics when entries change
   useEffect(() => {
     if (!entries.length) {
@@ -166,31 +183,41 @@ export default function SettingsPage() {
     }
   };
 
-  // Handle file restore from locked state
+  // Handle file restore from locked / uninitialized state
   const handleFileRestore = async () => {
-    if (window.api && window.api.backupPreVault) {
-      await window.api.backupPreVault.initTemp();
-      const result = await window.api.backupPreVault.importFile();
-      if (result.success && result.backupData) {
-        sessionStorage.setItem('pendingRestore', JSON.stringify(result.backupData));
-        window.location.href = '/vault';
-      } else if (!result.cancelled) {
-        alert(result.error || 'Failed to restore backup');
-      }
+    setRestoreMessage('');
+    setRestoreLoading(true);
+    try {
+      const result = await pickPreVaultBackup();
+      if (result.cancelled) return;
+      const meta = getPendingRestoreMeta();
+      setRestoreMeta(meta);
+      setRestoreMessage(result.message || formatRestoreSuccessMessage(meta));
+    } catch (err) {
+      console.error('[Restore]', err);
+      setRestoreMessage(`❌ ${err.message}`);
+      setRestoreMeta(null);
+    } finally {
+      setRestoreLoading(false);
     }
   };
 
-  // Handle iCloud restore from locked state
+  // Handle iCloud restore from locked / uninitialized state
   const handleICloudRestore = async () => {
-    if (window.api && window.api.backupPreVault) {
-      await window.api.backupPreVault.initTemp();
-      const result = await window.api.backupPreVault.iCloudRestore();
-      if (result.success && result.backupData) {
-        sessionStorage.setItem('pendingRestore', JSON.stringify(result.backupData));
-        window.location.href = '/vault';
-      } else {
-        alert(result.error || 'No iCloud backup found');
-      }
+    setRestoreMessage('');
+    setRestoreLoading(true);
+    try {
+      const result = await pickPreVaultICloudBackup();
+      if (result.cancelled) return;
+      const meta = getPendingRestoreMeta();
+      setRestoreMeta(meta);
+      setRestoreMessage(result.message || formatRestoreSuccessMessage(meta));
+    } catch (err) {
+      console.error('[Restore]', err);
+      setRestoreMessage(`❌ ${err.message}`);
+      setRestoreMeta(null);
+    } finally {
+      setRestoreLoading(false);
     }
   };
 
@@ -221,33 +248,82 @@ export default function SettingsPage() {
               This is useful if you're setting up a new device or recovering from data loss.
             </p>
 
-            {/* Backup buttons using backupPreVault API */}
-            <div className="button-group" style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-              <button onClick={handleFileRestore} className="backup-button" style={{
+            {!hasDesktopVaultApi() && (
+              <p style={{ color: '#ffc107', fontSize: '0.9rem', marginTop: '0.75rem' }}>
+                Open AuraSafe in the Electron app (npm run dev) — restore does not work in a browser tab.
+              </p>
+            )}
+
+            {restoreMeta && <RestoreStatusBanner meta={restoreMeta} />}
+
+            <div className="button-group" style={{ display: 'flex', gap: '1rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={handleFileRestore}
+                disabled={restoreLoading}
+                className="backup-button"
+                style={{
                 padding: '0.7rem 1.5rem',
                 background: 'linear-gradient(135deg, #2e7d32, #1b5e20)',
                 color: '#fff',
                 border: 'none',
                 borderRadius: '2rem',
-                cursor: 'pointer',
+                cursor: restoreLoading ? 'wait' : 'pointer',
                 fontSize: '0.9rem',
                 fontWeight: '600',
+                opacity: restoreLoading ? 0.7 : 1,
               }}>
-                📂 Restore from File
+                {restoreLoading ? 'Loading…' : '📂 Restore from File'}
               </button>
-              <button onClick={handleICloudRestore} className="backup-button" style={{
+              <button
+                type="button"
+                onClick={handleICloudRestore}
+                disabled={restoreLoading}
+                className="backup-button"
+                style={{
                 padding: '0.7rem 1.5rem',
                 background: 'rgba(59, 130, 246, 0.8)',
                 color: '#fff',
                 border: 'none',
                 borderRadius: '2rem',
-                cursor: 'pointer',
+                cursor: restoreLoading ? 'wait' : 'pointer',
                 fontSize: '0.9rem',
                 fontWeight: '600',
+                opacity: restoreLoading ? 0.7 : 1,
               }}>
-                ☁️ Restore from iCloud
+                {restoreLoading ? 'Loading…' : '☁️ Restore from iCloud'}
               </button>
             </div>
+            {restoreMessage && !restoreMeta && (
+              <p
+                style={{
+                  marginTop: '1rem',
+                  fontSize: '0.9rem',
+                  color: restoreMessage.startsWith('❌') ? '#f87171' : '#c8e6c9',
+                }}
+              >
+                {restoreMessage}
+              </p>
+            )}
+            {restoreMeta && (
+              <div style={{ marginTop: '1.25rem' }}>
+                <SafeLink
+                  href="/vault"
+                  style={{
+                    background: 'linear-gradient(135deg, #2e7d32, #1b5e20)',
+                    border: 'none',
+                    color: '#fff',
+                    padding: '0.65rem 1.5rem',
+                    borderRadius: '2rem',
+                    textDecoration: 'none',
+                    display: 'inline-block',
+                    fontWeight: 600,
+                  }}
+                >
+                  Continue to Vault →
+                </SafeLink>
+              </div>
+            )}
           </div>
 
           <hr className="settings-divider" />
@@ -790,6 +866,26 @@ export default function SettingsPage() {
             >
               📂 Open Backup Manager
             </button>
+          </div>
+
+          <hr className="settings-divider" />
+
+          <div className="setting-section">
+            <div className="setting-header">
+              <span className="setting-icon">📥</span>
+              <h3>Import credentials from CSV</h3>
+            </div>
+            <CredentialCsvImport
+              api={api}
+              onImportComplete={(importedEntries) => {
+                setEntries(importedEntries);
+                setVaultDataForBackup({
+                  entries: importedEntries,
+                  _meta: { lastModified: Date.now(), version: '1.0' },
+                });
+                setSyncMessage(`✅ Imported ${importedEntries.length} total vault entries.`);
+              }}
+            />
           </div>
 
           <hr className="settings-divider" />

@@ -1,37 +1,34 @@
 // src/components/RestoreScreen.jsx
 import { useState } from 'react';
+import { pickPreVaultBackup, pickPreVaultICloudBackup, getPendingRestoreMeta } from '../lib/backup-restore';
+import { hasDesktopVaultApi } from '../lib/api-client';
+import RestoreStatusBanner from './RestoreStatusBanner';
 
 export default function RestoreScreen({ onRestoreComplete, onSkip }) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
+    const [restoreMeta, setRestoreMeta] = useState(null);
 
     const handleFileRestore = async () => {
         setLoading(true);
         setError('');
         setSuccess('');
-        
+
         try {
-            // Initialize temp backup manager
-            await window.api.backupPreVault.initTemp();
-            
-            // Import the backup file
-            const result = await window.api.backupPreVault.importFile();
-            
-            if (result.success && result.backupData) {
-                // Store backup data temporarily
-                sessionStorage.setItem('pendingRestore', JSON.stringify(result.backupData));
-                setSuccess('Backup file loaded successfully! Redirecting...');
-                
-                setTimeout(() => {
-                    if (onRestoreComplete) onRestoreComplete(result.backupData);
-                }, 1500);
-            } else if (result.cancelled) {
-                // User cancelled, do nothing
-                setLoading(false);
-            } else {
-                setError(result.error || 'Failed to load backup file');
-            }
+            const result = await pickPreVaultBackup();
+            if (result.cancelled) return;
+
+            setRestoreMeta(getPendingRestoreMeta());
+            setSuccess(result.message || `Loaded ${result.entriesCount} entries. Redirecting…`);
+            setTimeout(() => {
+                if (onRestoreComplete) {
+                    const raw = sessionStorage.getItem('pendingRestore');
+                    onRestoreComplete(raw ? JSON.parse(raw) : null);
+                } else {
+                    window.location.href = '/vault';
+                }
+            }, 1500);
         } catch (err) {
             setError(err.message || 'An error occurred');
         } finally {
@@ -43,24 +40,21 @@ export default function RestoreScreen({ onRestoreComplete, onSkip }) {
         setLoading(true);
         setError('');
         setSuccess('');
-        
+
         try {
-            // Initialize temp backup manager
-            await window.api.backupPreVault.initTemp();
-            
-            // Restore from iCloud
-            const result = await window.api.backupPreVault.iCloudRestore();
-            
-            if (result.success && result.backupData) {
-                sessionStorage.setItem('pendingRestore', JSON.stringify(result.backupData));
-                setSuccess(`Backup from ${new Date(result.backupDate).toLocaleString()} loaded successfully! Redirecting...`);
-                
-                setTimeout(() => {
-                    if (onRestoreComplete) onRestoreComplete(result.backupData);
-                }, 1500);
-            } else {
-                setError(result.error || 'No iCloud backup found');
-            }
+            const result = await pickPreVaultICloudBackup();
+            if (result.cancelled) return;
+
+            setRestoreMeta(getPendingRestoreMeta());
+            setSuccess(result.message || `Loaded ${result.entriesCount} entries from iCloud. Redirecting…`);
+            setTimeout(() => {
+                if (onRestoreComplete) {
+                    const raw = sessionStorage.getItem('pendingRestore');
+                    onRestoreComplete(raw ? JSON.parse(raw) : null);
+                } else {
+                    window.location.href = '/vault';
+                }
+            }, 1500);
         } catch (err) {
             setError(err.message || 'An error occurred');
         } finally {
@@ -76,15 +70,24 @@ export default function RestoreScreen({ onRestoreComplete, onSkip }) {
                 <p style={styles.subtitle}>Secure password manager</p>
                 
                 <div style={styles.divider} />
+
+                {restoreMeta && <RestoreStatusBanner meta={restoreMeta} />}
                 
                 <h3 style={styles.sectionTitle}>Restore Existing Vault</h3>
                 <p style={styles.description}>
                     Have a backup? Restore your vault to get all your passwords back.
                 </p>
                 
+                {!hasDesktopVaultApi() && (
+                    <p style={{ color: '#ffc107', fontSize: '0.85rem', marginBottom: '1rem' }}>
+                        Use the AuraSafe Electron app — restore does not work in a browser tab.
+                    </p>
+                )}
+
                 <div style={styles.buttonGroup}>
-                    <button 
-                        onClick={handleFileRestore} 
+                    <button
+                        type="button"
+                        onClick={handleFileRestore}
                         disabled={loading}
                         style={styles.primaryButton}
                     >

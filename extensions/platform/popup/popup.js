@@ -1,5 +1,7 @@
 import { sendRuntimeMessage } from '../shared/browser/runtime.js';
 import { ExtensionMessageType } from '../shared/bridge/protocol.js';
+import { createEntryActions } from '../shared/ui/entryRowActions.js';
+import { populateEntryDetails } from '../shared/ui/entryRowDetails.js';
 
 const statusPill = document.getElementById('statusPill');
 const connectionTitle = document.getElementById('connectionTitle');
@@ -28,12 +30,6 @@ function setStatus(status) {
 
 function entryLabel(entry) {
   return entry.displayName || entry.name || entry.title || entry.url || 'Untitled entry';
-}
-
-function entryMeta(entry) {
-  return [entry.username || entry.email || entry.login, entry.displayHost || entry.url || entry.website || entry.domain]
-    .filter(Boolean)
-    .join(' · ');
 }
 
 function formatCacheState(result) {
@@ -77,39 +73,28 @@ function renderEntries() {
   }
 
   for (const entry of filtered.slice(0, 12)) {
+    try {
     const item = document.createElement('li');
     item.className = 'entry';
     const details = document.createElement('div');
+    details.className = 'entry-details';
     const name = document.createElement('div');
     name.className = 'entry-name';
     name.textContent = entryLabel(entry);
-    const meta = document.createElement('div');
-    meta.className = 'entry-meta';
-    meta.textContent = entryMeta(entry) || 'Ready to fill';
-    details.append(name, meta);
+    details.append(name);
+    populateEntryDetails(details, entry);
+    if (!details.querySelector('.entry-field, .entry-meta')) {
+      const meta = document.createElement('div');
+      meta.className = 'entry-meta';
+      meta.textContent = 'Ready to fill';
+      details.append(meta);
+    }
 
-    const fill = document.createElement('button');
-    fill.className = 'primary';
-    fill.type = 'button';
-    const canFill = entry.fillAvailable !== false && !entry.offlineOnly;
-    fill.textContent = canFill ? 'Fill' : 'Browse';
-    fill.disabled = !canFill;
-    fill.addEventListener('click', async () => {
-      if (!canFill) {
-        return;
-      }
-      fill.disabled = true;
-      fill.textContent = 'Filling';
-      const response = await sendRuntimeMessage({
-        type: ExtensionMessageType.fillEntry,
-        entry,
-      });
-      fill.textContent = response?.ok ? 'Filled' : 'Retry';
-      fill.disabled = false;
-    });
-
-    item.append(details, fill);
+    item.append(details, createEntryActions(entry, { primaryClass: 'primary' }));
     entryList.append(item);
+    } catch (error) {
+      console.error('Failed to render vault entry row', error, entry);
+    }
   }
 }
 
@@ -127,27 +112,51 @@ async function loadStatus() {
 }
 
 async function loadEntries() {
-  renderEmpty('Loading current-site suggestions...');
-  const response = await sendRuntimeMessage({ type: ExtensionMessageType.getEntriesForActiveTab });
-  if (!response?.ok) {
+  renderEmpty('Loading vault entries...');
+
+  const statusResponse = await sendRuntimeMessage({ type: ExtensionMessageType.getStatus });
+  const connected = Boolean(statusResponse?.result?.connected);
+
+  const tabResponse = await sendRuntimeMessage({ type: ExtensionMessageType.getEntriesForActiveTab });
+  if (!tabResponse?.ok) {
     entries = [];
     siteEntries = [];
     currentSite.textContent = 'Unable to read active tab';
-    renderEmpty(response?.error || 'Unable to load vault entries.');
+    renderEmpty(tabResponse?.error || 'Unable to load vault entries.');
     return;
   }
-  siteEntries = response.result?.entries || [];
-  entries = siteEntries;
-  currentSite.textContent = `${response.result?.host || 'Active tab'}${response.result?.offline ? ' · offline cache' : ''}`;
-  offlineState.textContent = formatCacheState(response.result);
+
+  siteEntries = tabResponse.result?.entries || [];
+  const host = tabResponse.result?.host || 'Active tab';
+  currentSite.textContent = `${host}${tabResponse.result?.offline ? ' · offline cache' : ''}`;
+  offlineState.textContent = formatCacheState(tabResponse.result);
+
+  if (connected) {
+    const vaultResponse = await sendRuntimeMessage({
+      type: ExtensionMessageType.searchVault,
+      query: '',
+    });
+    entries = vaultResponse?.ok ? vaultResponse.result || [] : siteEntries;
+  } else {
+    entries = siteEntries;
+  }
+
+  if (!entries.length) {
+    renderEmpty(
+      connected
+        ? 'No vault entries in the desktop app yet.'
+        : 'No entries for this site. Connect to AuraSafe desktop or open a matching website.',
+    );
+    return;
+  }
+
   renderEntries();
 }
 
 async function searchVault() {
   const query = searchInput.value.trim();
   if (!query) {
-    entries = siteEntries;
-    renderEntries();
+    await loadEntries();
     return;
   }
 

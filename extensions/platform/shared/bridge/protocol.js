@@ -24,6 +24,7 @@ export const ExtensionMessageType = Object.freeze({
   connectDesktop: 'aurasafe.desktop.connect',
   searchVault: 'aurasafe.vault.search',
   fillEntry: 'aurasafe.vault.fillEntry',
+  launchEntry: 'aurasafe.vault.launchEntry',
   getEntriesForActiveTab: 'aurasafe.vault.getEntriesForActiveTab',
   getDiagnostics: 'aurasafe.desktop.diagnostics',
   getDashboardSummary: 'aurasafe.dashboard.summary',

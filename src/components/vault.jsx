@@ -4,7 +4,21 @@ import Sidebar from '../components/Sidebar';
 import CategoryModal from '../components/CategoryModal';
 import EntryModal from '../components/EntryModal';
 import RestoreScreen from '../components/RestoreScreen';
-import { isInitialized, initVault, unlockVault } from '../lib/api-client';
+import {
+  getVaultBridge,
+  hasDesktopVaultApi,
+  isInitialized,
+  initVault,
+  unlockVault,
+  lockVault,
+  loadVault,
+  isUnlocked,
+  isBiometricAvailable,
+  isBiometricEnabled,
+  unlockWithBiometric,
+  syncPush,
+  syncPull,
+} from '../lib/api-client';
 
 export default function Vault() {
   const router = useRouter();
@@ -26,7 +40,7 @@ export default function Vault() {
   const [modalCategory, setModalCategory] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const api = typeof window !== 'undefined' ? window.api : null;
+  const usingElectronApi = typeof window !== 'undefined' && hasDesktopVaultApi();
 
   const setEntriesSafe = (data) => setEntries(Array.isArray(data) ? data : []);
 
@@ -36,9 +50,8 @@ export default function Vault() {
   };
 
   const loadEntries = async () => {
-    if (!api) return;
     try {
-      const data = await api.getVaultEntries();
+      const data = await loadVault();
       setEntriesSafe(data);
     } catch (err) {
       handleError('Failed to load entries', err);
@@ -46,10 +59,9 @@ export default function Vault() {
   };
 
   useEffect(() => {
-    if (!api) return;
     const init = async () => {
       try {
-        const isInit = await api.isInitialized();
+        const isInit = await isInitialized();
         setInitialized(isInit);
         
         // Check if there's a pending restore from sessionStorage
@@ -60,9 +72,9 @@ export default function Vault() {
         }
 
         if (isInit) {
-          const isUnlocked = await api.isUnlocked();
-          setUnlocked(isUnlocked);
-          if (isUnlocked) loadEntries();
+          const unlockedNow = await isUnlocked();
+          setUnlocked(unlockedNow);
+          if (unlockedNow) loadEntries();
         }
       } catch (err) {
         handleError('Failed to check vault status', err);
@@ -72,13 +84,13 @@ export default function Vault() {
   }, []);
 
   useEffect(() => {
-    if (!api || !initialized || unlocked) return;
+    if (!initialized || unlocked) return;
     const check = async () => {
       try {
-        const available = await api.biometric.isAvailable();
+        const available = await isBiometricAvailable();
         setBiometricAvailable(available);
         if (available) {
-          const enabled = await api.biometric.isEnabled();
+          const enabled = await isBiometricEnabled();
           setBiometricEnabled(enabled);
         }
       } catch (err) {
@@ -89,11 +101,9 @@ export default function Vault() {
   }, [initialized, unlocked]);
 
   const handleRestoreComplete = async (backupData) => {
-    // Process the backup and create vault
     setPendingRestoreData(backupData);
-    // Trigger vault creation with backup data
-    if (api && api.restoreFromBackup) {
-      await api.restoreFromBackup(backupData);
+    if (typeof window !== 'undefined' && window.api?.restoreFromBackup) {
+      await window.api.restoreFromBackup(backupData);
     }
     window.location.reload();
   };
@@ -107,7 +117,7 @@ export default function Vault() {
     e.preventDefault();
     setLoading(true);
     try {
-      await api.initVault(masterPassword);
+      await initVault(masterPassword);
       setInitialized(true);
       setUnlocked(true);
       setMasterPassword('');
@@ -124,7 +134,7 @@ export default function Vault() {
     setLoading(true);
     setUnlockError(null);
     try {
-      const res = await api.unlockVault(masterPassword);
+      const res = await unlockVault(masterPassword);
       if (!res.success) {
         setUnlockError('Incorrect password. Please try again.');
         setLoading(false);
@@ -145,7 +155,7 @@ export default function Vault() {
     setLoading(true);
     setUnlockError(null);
     try {
-      const res = await api.biometric.unlock();
+      const res = await unlockWithBiometric();
       if (!res.success) {
         setUnlockError(res.error || 'Biometric unlock failed. Please use master password.');
         setLoading(false);
@@ -163,7 +173,7 @@ export default function Vault() {
 
   const handleLock = async () => {
     try {
-      await api.lockVault();
+      await lockVault();
       setUnlocked(false);
       setEntries([]);
     } catch (err) {
@@ -180,7 +190,7 @@ export default function Vault() {
     setSyncLoading(true);
     setSyncMessage(type === 'push' ? 'Pushing...' : 'Pulling...');
     try {
-      const res = await api.sync[type]();
+      const res = type === 'push' ? await syncPush() : await syncPull();
       if (!res.success) {
         setSyncMessage(`❌ ${res.error}`);
         return;
@@ -317,7 +327,7 @@ export default function Vault() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         category={modalCategory}
-        api={api}
+        api={typeof window !== 'undefined' ? getVaultBridge() : null}
       />
     </div>
   );

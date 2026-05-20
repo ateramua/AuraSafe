@@ -18,6 +18,7 @@ const categoryLabels = {
 };
 
 const defaultFields = {
+  name: '',
   title: '',
   username: '',
   password: '',
@@ -41,16 +42,26 @@ const defaultFields = {
   licenseNumber: '',
 };
 
-const getInitialState = (entry) => ({
-  ...defaultFields,
-  ...entry,
-});
+const getInitialState = (entry, category) => {
+  const base = { ...defaultFields, ...entry };
+  if (category === 'passwords') {
+    const label = (entry.name || entry.title || '').trim();
+    return { ...base, name: label, title: label };
+  }
+  return base;
+};
+
+/** Keep name and title in sync for vault/export compatibility. */
+function normalizeCredentialPayload(payload) {
+  const label = (payload.name || payload.title || '').trim();
+  return { ...payload, name: label, title: label };
+}
 
 const getFieldConfig = (category) => {
   switch (category) {
     case 'passwords':
       return [
-        { name: 'title', label: 'Title' },
+        { name: 'name', label: 'Name' },
         { name: 'username', label: 'Username' },
         { name: 'password', label: 'Password', type: 'password' },
         { name: 'url', label: 'Website' },
@@ -104,15 +115,15 @@ const getFieldConfig = (category) => {
 };
 
 export default function EntryModal({ isOpen, entry, category, onClose, onSave, zIndex = 1200 }) {
-  const [form, setForm] = useState(getInitialState(entry || {}));
+  const [form, setForm] = useState(getInitialState(entry || {}, category));
   const [saving, setSaving] = useState(false);
   const [showGenerator, setShowGenerator] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      setForm(getInitialState(entry || {}));
+      setForm(getInitialState(entry || {}, category));
     }
-  }, [isOpen, entry]);
+  }, [isOpen, entry, category]);
 
   const handleUseGeneratedPassword = (password) => {
     setForm((prev) => ({ ...prev, password }));
@@ -131,12 +142,15 @@ export default function EntryModal({ isOpen, entry, category, onClose, onSave, z
   const handleSave = async () => {
     setSaving(true);
     try {
-      const payload = {
+      let payload = {
         ...entry,
         ...form,
         type: categoryToType[category] || entry?.type || 'credential',
         id: entry?.id || Date.now().toString(),
       };
+      if (category === 'passwords') {
+        payload = normalizeCredentialPayload(payload);
+      }
       await onSave(payload);
     } catch (err) {
       console.error('Failed to save entry:', err);

@@ -2,6 +2,28 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Sidebar from '../components/Sidebar';
 import CategoryModal from '../components/CategoryModal';
+import RestoreStatusBanner from '../components/RestoreStatusBanner';
+import {
+  getPendingRestoreMeta,
+  clearPendingRestoreMeta,
+  PENDING_RESTORE_KEY,
+} from '../lib/backup-restore';
+import {
+  getVaultBridge,
+  hasDesktopVaultApi,
+  initVault,
+  unlockVault,
+  lockVault,
+  loadVault,
+  isInitialized,
+  isUnlocked,
+  saveVaultEntry,
+  isBiometricAvailable,
+  isBiometricEnabled,
+  unlockWithBiometric,
+  syncPush,
+  syncPull,
+} from '../lib/api-client';
 
 export default function Vault() {
   const router = useRouter();
@@ -17,12 +39,13 @@ export default function Vault() {
   const [syncLoading, setSyncLoading] = useState(false);
   const [unlockError, setUnlockError] = useState(null);
   const [pendingRestoreData, setPendingRestoreData] = useState(null);
+  const [restoreMeta, setRestoreMeta] = useState(null);
 
   // Modal state
   const [modalCategory, setModalCategory] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const api = typeof window !== 'undefined' ? window.api : null;
+  const usingElectronApi = typeof window !== 'undefined' && hasDesktopVaultApi();
 
   const setEntriesSafe = (data) => setEntries(Array.isArray(data) ? data : []);
 
@@ -32,9 +55,8 @@ export default function Vault() {
   };
 
   const loadEntries = async () => {
-    if (!api) return;
     try {
-      const data = await api.getVaultEntries();
+      const data = await loadVault();
       setEntriesSafe(data);
     } catch (err) {
       handleError('Failed to load entries', err);
@@ -42,31 +64,41 @@ export default function Vault() {
   };
 
   useEffect(() => {
-    if (!api) return;
     const init = async () => {
       try {
-        const isInit = await api.isInitialized();
+        const isInit = await isInitialized();
         setInitialized(isInit);
 
         // Check for pending restore data
-        const pendingRestore = typeof window !== 'undefined' ? sessionStorage.getItem('pendingRestore') : null;
+        const pendingRestore =
+          typeof window !== 'undefined' ? sessionStorage.getItem(PENDING_RESTORE_KEY) : null;
+        const meta = getPendingRestoreMeta();
+        if (meta) setRestoreMeta(meta);
+
         if (pendingRestore) {
           try {
             const backupData = JSON.parse(pendingRestore);
-            // Extract the actual vault data from the backup container
             const vaultData = backupData.data || backupData;
             setPendingRestoreData(vaultData);
-            sessionStorage.removeItem('pendingRestore'); // Clear it
+            if (!meta && vaultData?.entries?.length) {
+              setRestoreMeta({
+                entriesCount: vaultData.entries.length,
+                fileName: 'backup file',
+                encrypted: true,
+                source: 'file',
+              });
+            }
           } catch (err) {
             console.error('Failed to parse pending restore data:', err);
-            sessionStorage.removeItem('pendingRestore'); // Clear invalid data
+            sessionStorage.removeItem(PENDING_RESTORE_KEY);
+            clearPendingRestoreMeta();
           }
         }
 
         if (isInit) {
-          const isUnlocked = await api.isUnlocked();
-          setUnlocked(isUnlocked);
-          if (isUnlocked) loadEntries();
+          const unlockedNow = await isUnlocked();
+          setUnlocked(unlockedNow);
+          if (unlockedNow) loadEntries();
         }
       } catch (err) {
         handleError('Failed to check vault status', err);
@@ -76,13 +108,13 @@ export default function Vault() {
   }, []);
 
   useEffect(() => {
-    if (!api || !initialized || unlocked) return;
+    if (!initialized || unlocked) return;
     const check = async () => {
       try {
-        const available = await api.biometric.isAvailable();
+        const available = await isBiometricAvailable();
         setBiometricAvailable(available);
         if (available) {
-          const enabled = await api.biometric.isEnabled();
+          const enabled = await isBiometricEnabled();
           setBiometricEnabled(enabled);
         }
       } catch (err) {
@@ -96,7 +128,7 @@ export default function Vault() {
     e.preventDefault();
     setLoading(true);
     try {
-      await api.initVault(masterPassword);
+      await initVault(masterPassword);
       setInitialized(true);
       setUnlocked(true);
       
@@ -105,13 +137,16 @@ export default function Vault() {
         const entries = pendingRestoreData.entries;
         for (const entry of entries) {
           try {
-            await api.saveVaultEntry(entry);
+            await saveVaultEntry(entry);
           } catch (err) {
             console.error('Failed to save restored entry:', err);
           }
         }
         setEntriesSafe(entries);
         setPendingRestoreData(null);
+        setRestoreMeta(null);
+        sessionStorage.removeItem(PENDING_RESTORE_KEY);
+        clearPendingRestoreMeta();
       } else {
         // Create empty vault
         setEntries([]);
@@ -130,7 +165,7 @@ export default function Vault() {
     setLoading(true);
     setUnlockError(null);
     try {
-      const res = await api.unlockVault(masterPassword);
+      const res = await unlockVault(masterPassword);
       if (!res.success) {
         setUnlockError('Incorrect password. Please try again.');
         setLoading(false);
@@ -151,7 +186,7 @@ export default function Vault() {
     setLoading(true);
     setUnlockError(null);
     try {
-      const res = await api.biometric.unlock();
+      const res = await unlockWithBiometric();
       if (!res.success) {
         setUnlockError(res.error || 'Biometric unlock failed. Please use master password.');
         setLoading(false);
@@ -169,7 +204,7 @@ export default function Vault() {
 
   const handleLock = async () => {
     try {
-      await api.lockVault();
+      await lockVault();
       setUnlocked(false);
       setEntries([]);
     } catch (err) {
@@ -186,7 +221,7 @@ export default function Vault() {
     setSyncLoading(true);
     setSyncMessage(type === 'push' ? 'Pushing...' : 'Pulling...');
     try {
-      const res = await api.sync[type]();
+      const res = type === 'push' ? await syncPush() : await syncPull();
       if (!res.success) {
         setSyncMessage(`❌ ${res.error}`);
         return;
@@ -218,8 +253,15 @@ export default function Vault() {
     const isRestore = pendingRestoreData && pendingRestoreData.entries;
     return (
       <div style={styles.container}>
+        {!usingElectronApi && (
+          <p style={styles.desktopWarning}>
+            Desktop API not detected. Use <code>npm run dev</code> and sign in from the Electron
+            window, not only the browser at localhost:3000.
+          </p>
+        )}
+        {restoreMeta && <RestoreStatusBanner meta={restoreMeta} />}
         <h2>{isRestore ? 'Restore Vault from Backup' : 'Initialize Vault'}</h2>
-        {isRestore && (
+        {isRestore && !restoreMeta && (
           <div style={styles.restoreInfo}>
             <p>Found backup data with {pendingRestoreData.entries.length} entries.</p>
             <p>Enter a master password to restore your vault.</p>
@@ -244,6 +286,7 @@ export default function Vault() {
   if (!unlocked) {
     return (
       <div style={styles.container}>
+        {restoreMeta && <RestoreStatusBanner meta={restoreMeta} />}
         <h2>Unlock Vault</h2>
         {unlockError && (
           <div style={styles.errorMessage}>
@@ -319,7 +362,7 @@ export default function Vault() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         category={modalCategory}
-        api={api}
+        api={typeof window !== 'undefined' ? getVaultBridge() : null}
       />
     </div>
   );
@@ -396,6 +439,16 @@ const styles = {
     borderRadius: '1rem',
     backdropFilter: 'blur(4px)',
     marginTop: '2rem',
+  },
+  desktopWarning: {
+    background: 'rgba(255, 193, 7, 0.15)',
+    border: '1px solid #ffc107',
+    color: '#ffe082',
+    padding: '0.75rem 1rem',
+    borderRadius: '0.5rem',
+    marginBottom: '1rem',
+    fontSize: '0.9rem',
+    lineHeight: 1.5,
   },
   restoreInfo: {
     background: 'rgba(59, 130, 246, 0.1)',
