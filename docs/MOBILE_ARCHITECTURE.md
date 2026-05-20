@@ -27,3 +27,17 @@ If you see `spawn adb ENOENT`, the Android SDK is not installed. See [ANDROID_DE
 ```bash
 npm run dev
 ```
+
+## After merge to `main`
+
+Both desktop and mobile live on `main`. Use short-lived feature branches for changes, then open a PR back to `main`.
+
+| Task | Command |
+|------|---------|
+| Install deps | `npx pnpm install` |
+| Build shared packages | `npx pnpm run build:packages` |
+| Mobile (Expo Go) | `npx pnpm run dev:mobile` |
+| Desktop | `npm run dev` |
+| Release APK (local) | See [ANDROID_DEV_SETUP.md](./ANDROID_DEV_SETUP.md) — build artifacts are not committed |
+
+Vault data in Expo Go does not transfer to a standalone APK; restore from a `.aura` backup on the device app.
