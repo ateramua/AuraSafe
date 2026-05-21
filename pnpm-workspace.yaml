@@ -1,0 +1,10 @@
+packages:
+  - '.'
+  - 'packages/*'
+  - 'packages/tooling/*'
+  - 'apps/*'
+  - 'apps/mobile/*'
+  - 'services/*'
+
+# Hoist for Metro/Expo compatibility (desktop Next.js stays on React 18 in apps/mobile only uses React 19)
+nodeLinker: hoisted

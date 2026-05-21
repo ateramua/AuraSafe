@@ -171,3 +171,24 @@ out/
 
 # Node
 node_modules/
+
+# Local cleanup archives (nested duplicate backups)
+.cleanup-archive/
+
+# pnpm / turbo
+.pnpm-store/
+.turbo/
+
+# Expo / React Native / Android builds
+.expo/
+apps/mobile/**/.expo/
+apps/mobile/**/android/app/build/
+apps/mobile/**/android/build/
+apps/mobile/**/android/.gradle/
+*.apk
+*.aab
+*.keystore
+!**/debug.keystore
+
+# Shared package build outputs
+packages/*/dist/

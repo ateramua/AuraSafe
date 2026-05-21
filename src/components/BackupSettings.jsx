@@ -25,30 +25,53 @@ export default function BackupSettings({ api, vaultData, onRestoreComplete }) {
     };
 
     const handleExport = async () => {
-        setLoading(true);
-        setBackupStatus('Exporting...');
-        const result = await api.backup.export(vaultData);
-        if (result.success) {
-            setBackupStatus(`✓ Backup saved to: ${result.filePath}`);
-        } else {
-            setBackupStatus(`✗ Failed: ${result.error}`);
+        if (!api?.backup?.export) {
+            setBackupStatus('✗ Export requires the AuraSafe desktop app (npm run dev).');
+            setTimeout(() => setBackupStatus(''), 4000);
+            return;
         }
-        setLoading(false);
-        setTimeout(() => setBackupStatus(''), 3000);
+        setLoading(true);
+        setBackupStatus('Exporting... Choose where to save the .aura file.');
+        try {
+            const result = await api.backup.export(vaultData);
+            if (result?.cancelled) {
+                setBackupStatus('Export cancelled');
+            } else if (result?.success) {
+                setBackupStatus(`✓ Backup saved to: ${result.filePath}`);
+                await findLocalBackups();
+            } else {
+                setBackupStatus(`✗ Failed: ${result?.error || 'Unknown error'}`);
+            }
+        } catch (err) {
+            setBackupStatus(`✗ Failed: ${err?.message || String(err)}`);
+        } finally {
+            setLoading(false);
+            setTimeout(() => setBackupStatus(''), 5000);
+        }
     };
 
     const handleImport = async () => {
+        if (!api?.backup?.import) {
+            setBackupStatus('✗ Import requires the AuraSafe desktop app (npm run dev).');
+            setTimeout(() => setBackupStatus(''), 4000);
+            return;
+        }
         setLoading(true);
         setBackupStatus('Importing...');
-        const result = await api.backup.import();
-        if (result.success) {
-            setBackupStatus(`✓ Restored from backup (${new Date(result.timestamp).toLocaleString()})`);
-            if (onRestoreComplete) onRestoreComplete(result.data);
-        } else if (!result.cancelled) {
-            setBackupStatus(`✗ Failed: ${result.error}`);
+        try {
+            const result = await api.backup.import();
+            if (result?.success) {
+                setBackupStatus(`✓ Restored from backup (${new Date(result.timestamp).toLocaleString()})`);
+                if (onRestoreComplete) onRestoreComplete(result.data);
+            } else if (!result?.cancelled) {
+                setBackupStatus(`✗ Failed: ${result?.error || 'Unknown error'}`);
+            }
+        } catch (err) {
+            setBackupStatus(`✗ Failed: ${err?.message || String(err)}`);
+        } finally {
+            setLoading(false);
+            setTimeout(() => setBackupStatus(''), 5000);
         }
-        setLoading(false);
-        setTimeout(() => setBackupStatus(''), 3000);
     };
 
     const handleICloudBackup = async () => {

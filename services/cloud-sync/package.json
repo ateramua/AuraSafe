@@ -1,0 +1,16 @@
+{
+  "name": "@aurasafe/service-cloud-sync",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "scripts": { "build": "tsc -p tsconfig.json" },
+  "dependencies": {
+    "@aurasafe/database": "workspace:*",
+    "@aurasafe/sync-engine": "workspace:*",
+    "@aurasafe/types": "workspace:*"
+  },
+  "devDependencies": { "@aurasafe/tsconfig": "workspace:*", "typescript": "^5.6.3" }
+}

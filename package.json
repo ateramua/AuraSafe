@@ -1,6 +1,8 @@
 {
   "name": "aurasafe",
   "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.4",
   "description": "A spiritual, mindful password manager desktop app with browser extensions",
   "author": "AuraSafe Team",
   "main": "electron/main/index.mjs",
@@ -21,7 +23,13 @@
     "extension:platform:package:firefox": "npm run extension:platform:firefox && node extensions/platform/scripts/package-extension.mjs firefox",
     "extension:platform:test": "node --test extensions/platform/tests/*.test.mjs",
     "test:import": "node --test electron/import/*.test.mjs",
-    "extension:platform:validate": "node extensions/platform/scripts/validate-extension.mjs"
+    "extension:platform:validate": "node extensions/platform/scripts/validate-extension.mjs",
+    "build:packages": "turbo run build --filter='./packages/*' --filter='./services/*'",
+    "dev:mobile": "pnpm run build:packages && pnpm --filter @aurasafe/android-app dev",
+    "dev:mobile:clear": "pnpm run build:packages && pnpm --filter @aurasafe/android-app exec expo start --clear",
+    "dev:mobile:tunnel": "pnpm run build:packages && pnpm --filter @aurasafe/android-app exec expo start --tunnel --clear",
+    "dev:mobile:android": "pnpm run build:packages && pnpm --filter @aurasafe/android-app dev:android",
+    "test:packages": "pnpm run build:packages && node --import tsx --test packages/core/src/crypto.test.ts"
   },
   "dependencies": {
     "crypto-js": "^4.2.0",
@@ -42,6 +50,10 @@
     "zxcvbn": "^4.4.2"
   },
   "devDependencies": {
+    "babel-preset-expo": "~13.2.0",
+    "turbo": "^2.3.3",
+    "typescript": "^5.6.3",
+    "tsx": "^4.19.2",
     "concurrently": "^8.2.2",
     "cross-env": "^10.1.0",
     "electron": "^30.5.1",

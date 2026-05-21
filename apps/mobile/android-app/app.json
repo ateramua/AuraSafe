@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "AuraSafe",
+    "slug": "aurasafe-android",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "aurasafe",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.aurasafe.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0A2E73"
+      }
+    },
+    "plugins": ["expo-router", "expo-secure-store", "expo-local-authentication", "expo-sqlite"],
+    "experiments": {
+      "typedRoutes": true,
+      "autolinkingModuleResolution": true
+    }
+  }
+}
